@@ -678,7 +678,7 @@ function renderSide() {
   const nd = nextDeadline();
   $('#side').innerHTML = `
     <div class="brand">
-      <div class="brand-name"><img class="brand-logo" src="brand/logo-horizontal.png?v=5" alt="${APP_NAME}" width="170" height="53"></div>
+      <div class="brand-name"><img class="brand-logo" src="brand/logo-horizontal.png?v=5" alt="${APP_NAME}" width="140" height="43"></div>
       ${S.profile.name ? `<div class="brand-sub">de ${esc(S.profile.name)}</div>` : ''}
     </div>
     ${NAV.map(([lab, items]) => `<div class="nav-label">${lab}</div><nav class="nav">${items.map(([k, l, i]) => `<a href="#/${k}" class="${r === k ? 'on' : ''}" ${r === k ? 'aria-current="page"' : ''}>${ic(i)}${l}${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}</a>`).join('')}</nav>`).join('')}

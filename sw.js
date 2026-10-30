@@ -1,4 +1,4 @@
-const CACHE = 'dossie-v13';
+const CACHE = 'dossie-v14';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icons/favicon-32.png', 'icons/favicon-64.png', 'icons/apple-touch-icon.png', 'brand/logo.png', 'brand/logo-horizontal.png', 'icons/app-192.png', 'icons/app-512.png'];
 
 self.addEventListener('install', e => {
