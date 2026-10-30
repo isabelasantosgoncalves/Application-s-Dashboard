@@ -1,5 +1,5 @@
-const CACHE = 'dossie-v11';
-const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/favicon-32.png', 'icons/favicon-64.png', 'icons/apple-touch-icon.png', 'brand/logo.png', 'brand/logo-horizontal.png', 'icons/icon-192.png', 'icons/icon-512.png'];
+const CACHE = 'dossie-v12';
+const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icons/favicon-32.png', 'icons/favicon-64.png', 'icons/apple-touch-icon.png', 'brand/logo.png', 'brand/logo-horizontal.png', 'icons/app-192.png', 'icons/app-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
