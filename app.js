@@ -71,7 +71,7 @@ function toast(msg) {
 }
 
 /* ================= Domain constants ================= */
-const ACTIVITY_TYPES = ['Academic', 'Art', 'Athletics: Club', 'Athletics: JV/Varsity', 'Career Oriented', 'Community Service (Volunteer)', 'Computer/Technology', 'Cultural', 'Dance', 'Debate/Speech', 'Environmental', 'Family Responsibilities', 'Foreign Exchange', 'Internship', 'Journalism/Publication', 'LGBT', 'Music: Instrumental', 'Music: Vocal', 'Religious', 'Research', 'Robotics', 'School Spirit', 'Science/Math', 'Social Justice', 'Student Govt./Politics', 'Theater/Drama', 'Work (Paid)', 'Other Club/Activity'];
+const ACTIVITY_TYPES = ['Academic', 'Art', 'Athletics: Club', 'Athletics: JV/Varsity', 'Career Oriented', 'Community Service (Volunteer)', 'Computer/Technology', 'Cultural', 'Dance', 'Debate/Speech', 'Environmental', 'Family Responsibilities', 'Foreign Exchange', 'Foreign Language', 'Internship', 'Journalism/Publication', 'Junior R.O.T.C.', 'LGBT', 'Music: Instrumental', 'Music: Vocal', 'Religious', 'Research', 'Robotics', 'School Spirit', 'Science/Math', 'Social Justice', 'Student Govt./Politics', 'Theater/Drama', 'Work (Paid)', 'Other Club/Activity'];
 const GRADES = [{ v: '9', l: '9º' }, { v: '10', l: '10º' }, { v: '11', l: '11º' }, { v: '12', l: '12º' }, { v: 'PG', l: 'Pós-médio' }];
 const GRADE_HINT = '9th = 9º ano do EF · 10th = 1º EM · 11th = 2º EM · 12th = 3º EM';
 const TIMING = ['Durante as aulas', 'Durante as férias', 'Ano todo'];
@@ -113,11 +113,23 @@ function sheetMissing(p, a) {
 }
 const sheetOver = (p, a) => p.type === 'activities' ? (a.title || '').length > 50 || (a.org || '').length > 100 || (a.note || '').length > 150 : (a.title || '').length > 100;
 const sheetDone = (p, a) => !sheetMissing(p, a) && !sheetOver(p, a);
+/* Share of a sheet already filled: each field is worth an equal slice. A sheet
+   with every field filled but over a limit stays one slice short of done. */
+function sheetFrac(p, a) {
+  if (a.done) return 1;
+  const n = p.type === 'activities' ? 8 : 3;
+  return Math.min(n - sheetMissing(p, a), n - 1) / n;
+}
 
+/* parts: how full each block is, fullest first. Checklist items are all or nothing;
+   sheets count partly, so filling in fields moves the pillar forward. */
 function progress(p) {
   const done = p.items.filter(i => i.done).length;
   const total = p.target ? Number(p.target) : p.items.length;
-  return { done, total, pct: total ? Math.min(1, done / total) : 0 };
+  const parts = p.type === 'checklist' ? p.items.map(i => +!!i.done) : p.items.map(a => sheetFrac(p, a));
+  parts.sort((a, b) => b - a);
+  const sum = parts.slice(0, total).reduce((a, f) => a + f, 0);
+  return { done, total, parts, pct: total ? Math.min(1, sum / total) : 0 };
 }
 const overall = () => {
   if (!S.pillars.length) return 0;
@@ -125,10 +137,13 @@ const overall = () => {
 };
 
 function segs(p, cls = '') {
-  const { done, total } = progress(p);
+  const { done, total, parts, pct } = progress(p);
   if (!total) return `<div class="segs ${cls}"><i></i></div>`;
-  if (total > 16) return `<div class="bar"><i style="width:${Math.min(100, done / total * 100)}%"></i></div>`;
-  return `<div class="segs ${cls}" role="img" aria-label="${done} de ${total}">${Array.from({ length: total }, (_, i) => `<i class="${i < done ? 'on' : ''}"></i>`).join('')}</div>`;
+  if (total > 16) return `<div class="bar"><i style="width:${pct * 100}%"></i></div>`;
+  return `<div class="segs ${cls}" role="img" aria-label="${done} de ${total}">${Array.from({ length: total }, (_, i) => {
+    const f = parts[i] || 0;
+    return f >= 1 ? '<i class="on"></i>' : f > 0 ? `<i class="part" style="--f:${(f * 100).toFixed(1)}%"></i>` : '<i></i>';
+  }).join('')}</div>`;
 }
 
 /* Everything with a date, in one list */
