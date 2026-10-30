@@ -330,6 +330,8 @@ function seed({ name, cycle, test, mode, mentor = true }) {
     { id: uid(), name: 'Site', type: 'url' },
     { id: uid(), name: 'Enviada', type: 'checkbox' },
   ];
+  // "Do zero" keeps only the name column; the student adds the rest
+  if (mode === 'zero') columns.splice(1);
   const rows = [];
   if (ex) {
     const C = n => columns.find(c => c.name === n);
@@ -706,7 +708,7 @@ function profileForm(first = false) {
           <div class="choice">
             <label><input type="radio" name="mode" value="examples" checked><b>Com exemplos</b><small>Pilares, plano, prazos e uma college list curta já preenchidos. Dá pra apagar depois.</small></label>
             <label><input type="radio" name="mode" value="blank"><b>Só os pilares</b><small>SAT, redações, recomendações e os outros pilares prontos, sem nada dentro.</small></label>
-            <label><input type="radio" name="mode" value="zero"><b>Do zero</b><small>Nenhum pilar e nada preenchido. Você cria tudo do seu jeito.</small></label>
+            <label><input type="radio" name="mode" value="zero"><b>Do zero</b><small>Nenhum pilar e uma college list só com o nome da faculdade. Você cria tudo do seu jeito.</small></label>
           </div>
         </div>
       </div>
