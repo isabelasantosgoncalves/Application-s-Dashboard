@@ -405,7 +405,7 @@ button.row-main:hover .row-title { text-decoration: underline; text-underline-of
 .goal.done h3 { color: var(--ink-3); }
 .goal .rows .row { padding: 8px 0; }
 
-/* Plano */
+/* Planejamento */
 .plano-grid { grid-template-columns: minmax(0, 1.45fr) minmax(300px, 1fr); align-items: start; }
 .plano-grid.solo { grid-template-columns: minmax(0, 1fr); }
 .pills.sm label { height: 28px; padding: 0 11px; font-size: 12.5px; }

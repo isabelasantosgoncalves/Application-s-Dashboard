@@ -653,7 +653,7 @@ function profileForm(first = false) {
     { key: 'name', label: 'Seu nome', value: p.name, ph: 'Como quer ser chamada(o)' },
     { key: 'cycle', label: 'Vai entrar na faculdade em', type: 'radio', value: p.cycle, options: cycles.map(c => ({ v: c, l: c })) },
     { key: 'test', label: 'Prova de inglês', type: 'radio', value: p.test, options: [{ v: 'DET', l: 'Duolingo (DET)' }, { v: 'TOEFL', l: 'TOEFL' }, { v: 'IELTS', l: 'IELTS' }, { v: 'none', l: 'Não preciso' }] },
-    { key: 'mentoria', label: 'Tem mentoria ou acompanhamento?', type: 'radio', value: p.mentoria === false ? 'no' : 'yes', options: [{ v: 'yes', l: 'Tenho' }, { v: 'no', l: 'Não tenho' }], hint: 'Com mentoria, o Plano ganha um espaço para marcar as reuniões e juntar as perguntas para levar.' },
+    { key: 'mentoria', label: 'Tem mentoria ou acompanhamento?', type: 'radio', value: p.mentoria === false ? 'no' : 'yes', options: [{ v: 'yes', l: 'Tenho' }, { v: 'no', l: 'Não tenho' }], hint: 'Com mentoria, o Planejamento ganha um espaço para marcar as reuniões e juntar as perguntas para levar.' },
   ];
   if (!first) return openForm({
     title: 'Perfil', fields,
@@ -691,10 +691,10 @@ function profileForm(first = false) {
 
 /* ================= Shell ================= */
 const NAV = [
-  ['Painel', [['overview', 'Visão geral', 'home'], ['pillars', 'Pilares', 'layers'], ['plano', 'Plano', 'target'], ['calendar', 'Calendário', 'cal']]],
+  ['Painel', [['overview', 'Visão geral', 'home'], ['pillars', 'Pilares', 'layers'], ['plano', 'Planejamento', 'target'], ['calendar', 'Calendário', 'cal']]],
   ['Application', [['colleges', 'College list', 'school'], ['docs', 'Documentos', 'folder'], ['notes', 'Anotações', 'note']]],
 ];
-const ALIAS = { goals: 'plano', tasks: 'plano', mentoria: 'plano' };
+const ALIAS = { goals: 'plano', tasks: 'plano', mentoria: 'plano', planejamento: 'plano' };
 const routeName = () => { const r = location.hash.replace(/^#\/?/, '').split('/')[0] || 'overview'; return ALIAS[r] || r; };
 const go = r => { location.hash = '#/' + r; };
 
@@ -715,7 +715,7 @@ function renderSide() {
     </a>` : '<div style="height:24px"></div>'}
     <nav class="nav side-foot"><a href="#/settings" class="${r === 'settings' ? 'on' : ''}">${ic('gear')}Ajustes</a></nav>`;
 
-  const tabs = [['overview', 'Início', 'home'], ['pillars', 'Pilares', 'layers'], ['plano', 'Plano', 'target'], ['calendar', 'Agenda', 'cal']];
+  const tabs = [['overview', 'Início', 'home'], ['pillars', 'Pilares', 'layers'], ['plano', 'Planejamento', 'target'], ['calendar', 'Agenda', 'cal']];
   const inTabs = tabs.some(t => t[0] === r);
   $('#tabbar').innerHTML = tabs.map(([k, l, i]) => `<a href="#/${k}" class="${r === k ? 'on' : ''}">${ic(i, 21)}${l}</a>`).join('')
     + `<button data-a="side-open" class="${inTabs ? '' : 'on'}">${ic('menu', 21)}Mais</button>`;
@@ -885,7 +885,7 @@ function vOverview() {
       </section>
       <div class="grid">
         <section class="card">
-          <div class="sec-head"><h2 class="sec">Objetivos de ${MES_LONGO[parse(T).getMonth()]}</h2><span class="sp"></span><a class="link-btn" href="#/plano">Plano ${ic('right', 14)}</a></div>
+          <div class="sec-head"><h2 class="sec">Objetivos de ${MES_LONGO[parse(T).getMonth()]}</h2><span class="sp"></span><a class="link-btn" href="#/plano">Planejamento ${ic('right', 14)}</a></div>
           ${mGoals.length ? `<ul class="rows">${mGoals.map(g => goalRow(g)).join('')}</ul>` : `<div class="empty">Defina 2 ou 3 objetivos para este mês.<br><button class="btn ghost sm" data-a="add-goal" data-month="${M}">${ic('plus', 15)}Objetivo</button></div>`}
         </section>
         <section class="card">
@@ -1115,7 +1115,7 @@ function vPlano() {
   const gs = S.goals.filter(g => g.month === M);
   const mentor = S.profile.mentoria !== false;
   return `<div class="page">
-    ${head({ eyebrow: 'Planejamento', title: 'Plano', desc: `Objetivos do mês, tarefas${mentor ? ' e mentoria' : ''} no mesmo lugar. O objetivo é o resultado; as tarefas são o caminho até ele.`, actions: `<button class="btn ghost" data-a="add-task">${ic('plus', 16)}Tarefa</button><button class="btn primary" data-a="add-goal" data-month="${M}">${ic('plus', 16)}Objetivo</button>` })}
+    ${head({ eyebrow: 'Painel', title: 'Planejamento', desc: `Objetivos do mês, tarefas${mentor ? ' e mentoria' : ''} no mesmo lugar. O objetivo é o resultado; as tarefas são o caminho até ele.`, actions: `<button class="btn ghost" data-a="add-task">${ic('plus', 16)}Tarefa</button><button class="btn primary" data-a="add-goal" data-month="${M}">${ic('plus', 16)}Objetivo</button>` })}
     <div class="sec-head">
       <h2 class="sec">Objetivos do mês</h2>
       <span class="muted mono" style="font-size:12px">${gs.filter(g => g.done).length}/${gs.length}</span>
@@ -1379,7 +1379,7 @@ function vNotes() {
           <button class="icon-btn sm" data-a="del-note" data-id="${n.id}" aria-label="Excluir nota">${ic('x', 16)}</button>
         </div>
         <input class="t-in" data-i="note-title" value="${esc(n.title)}" placeholder="Título" aria-label="Título da nota">
-        ${nm ? '<div class="note-hint">Para mandar um próximo passo para o Plano, coloque o cursor na linha (ou selecione várias) e clique em Virar tarefa.</div>' : ''}
+        ${nm ? '<div class="note-hint">Para mandar um próximo passo para o Planejamento, coloque o cursor na linha (ou selecione várias) e clique em Virar tarefa.</div>' : ''}
         <textarea data-i="note-body" placeholder="Escreva aqui…" aria-label="Texto da nota">${esc(n.body)}</textarea>
       </section>` : '<section class="card note-editor" style="min-height:0"><div class="empty">Crie uma nota para começar.</div></section>'}
     </div>
@@ -1596,7 +1596,7 @@ const A = {
     if (!lines.length) return toast('Coloque o cursor numa linha com texto');
     lines.forEach(title => S.tasks.push({ id: uid(), title, due: '', done: false, goalId: '', pillarId: n.pillarId || '', meetId: n.meetId || '', note: `Da anotação "${n.title || 'Sem título'}"` }));
     save(); renderSide();
-    toast(`${plural(lines.length, 'tarefa criada', 'tarefas criadas')} no Plano`);
+    toast(`${plural(lines.length, 'tarefa criada', 'tarefas criadas')} no Planejamento`);
   },
 
   'add-note': () => {
@@ -1703,7 +1703,7 @@ $('#import-file').addEventListener('change', async e => {
 
 /* ================= Router ================= */
 const VIEWS = { overview: vOverview, pillars: vPillars, pillar: vPillar, plano: vPlano, calendar: vCalendar, colleges: vColleges, docs: vDocs, notes: vNotes, settings: vSettings };
-const TITLES = { overview: 'Visão geral', pillars: 'Pilares', pillar: 'Pilar', plano: 'Plano', calendar: 'Calendário', colleges: 'College list', docs: 'Documentos', notes: 'Anotações', settings: 'Ajustes' };
+const TITLES = { overview: 'Visão geral', pillars: 'Pilares', pillar: 'Pilar', plano: 'Planejamento', calendar: 'Calendário', colleges: 'College list', docs: 'Documentos', notes: 'Anotações', settings: 'Ajustes' };
 
 let lastRoute = '';
 function render() {
