@@ -103,6 +103,17 @@ const goal = id => S.goals.find(g => g.id === id);
 const pillarOpts = (blank = 'Nenhum') => [{ v: '', l: blank }, ...S.pillars.map(p => ({ v: p.id, l: p.name }))];
 const nounFor = p => p.type === 'activities' ? ['atividade', 'atividades'] : p.type === 'honors' ? ['honor', 'honors'] : ['marco', 'marcos'];
 
+/* Activity and honor sheets have no checkbox: a sheet is done once every field is
+   filled and within the Common App limits, so it can be saved half-written. */
+function sheetMissing(p, a) {
+  const empty = k => !a[k] || (Array.isArray(a[k]) && !a[k].length);
+  return p.type === 'activities'
+    ? ['atype', 'title', 'org', 'note', 'grades', 'timing', 'hours', 'weeks'].filter(empty).length
+    : ['title', 'grades', 'level'].filter(empty).length;
+}
+const sheetOver = (p, a) => p.type === 'activities' ? (a.title || '').length > 50 || (a.org || '').length > 100 || (a.note || '').length > 150 : (a.title || '').length > 100;
+const sheetDone = (p, a) => !sheetMissing(p, a) && !sheetOver(p, a);
+
 function progress(p) {
   const done = p.items.filter(i => i.done).length;
   const total = p.target ? Number(p.target) : p.items.length;
@@ -139,7 +150,12 @@ const nextDeadline = () => agenda().find(e => DEADLINE_KINDS.includes(e.kind) &&
 /* Notes can be tagged "Mentoria" instead of a pillar */
 const MENTOR_TAG = 'mentoria';
 const QUESTIONS_TITLE = 'Perguntas para a mentoria';
-const noteTag = n => n.pillarId === MENTOR_TAG ? 'Mentoria' : pillar(n.pillarId)?.name || '';
+/* Tasks, goals and notes can also be tied to the college list, which isn't a pillar */
+const COLLEGE_TAG = 'colleges';
+const areaName = id => id === MENTOR_TAG ? 'Mentoria' : id === COLLEGE_TAG ? 'College list' : pillar(id)?.name || '';
+const areaHref = id => id === COLLEGE_TAG ? '#/colleges' : id === MENTOR_TAG ? '#/plano' : `#/pillar/${id}`;
+const areaOpts = (blank = 'Nenhum') => [...pillarOpts(blank), { v: COLLEGE_TAG, l: 'College list' }];
+const noteTag = n => areaName(n.pillarId);
 const questionsNote = () => S.notes.find(n => n.questions);
 const meetNotes = id => S.notes.filter(n => n.meetId === id).sort((a, b) => b.updated - a.updated);
 function ensureQuestionsNote() {
@@ -176,6 +192,7 @@ function migrate(s) {
   if (!s) return s;
   if (s.profile.mentoria === undefined) s.profile.mentoria = true;
   s.pillars.forEach(p => { const k = OLD_DESC[p.desc]; if (k) p.desc = PILLAR_DESC[k]; });
+  s.pillars.forEach(p => { if (p.type !== 'checklist') p.items.forEach(a => { a.done = sheetDone(p, a); }); });
   s.meetings.forEach(m => {
     if (m.agenda || m.notes || m.next) {
       const body = [m.agenda && `Pauta\n${m.agenda}`, m.notes && `Anotações\n${m.notes}`, m.next && `Próximos passos\n${m.next}`].filter(Boolean).join('\n\n');
@@ -279,7 +296,7 @@ function seed({ name, cycle, test, mode, mentor = true }) {
       const n1 = { id: uid(), title: `Mentoria — ${fmt(m1.date)}`, body: 'Priorizar o SAT antes da prova de inglês.\nMontar uma lista longa, com umas 20 faculdades, até o fim do mês.\nPensar em quem pode escrever as cartas.', pillarId: MENTOR_TAG, meetId: m1.id, updated: Date.now() - 864e5 * 21 };
       meetings.push(m1, m2);
       notes.push(n1);
-      t('Montar a lista longa de faculdades', { meetId: m1.id, due: d(3) });
+      t('Montar a lista longa de faculdades', { meetId: m1.id, pillarId: COLLEGE_TAG, due: d(3) });
       t('Escolher a data do SAT', { meetId: m1.id, pillarId: sat.id, done: true });
       notes.push({ id: uid(), title: QUESTIONS_TITLE, body: '- Vale a pena aplicar Early Decision?\n- Como descrever o clube sem repetir o essay?\n- Preciso de tradução juramentada do histórico?', pillarId: MENTOR_TAG, meetId: '', questions: true, updated: Date.now() - 864e5 });
     }
@@ -403,7 +420,7 @@ function taskForm(t = null, pre = {}) {
     title: isNew ? 'Nova tarefa' : 'Editar tarefa',
     fields: [
       { key: 'title', label: 'Tarefa', value: t.title, required: true, ph: 'Ex.: gravar o vídeo do hackathon' },
-      [{ key: 'due', label: 'Prazo', type: 'date', value: t.due }, { key: 'pillarId', label: 'Pilar', type: 'select', options: pillarOpts(), value: t.pillarId }],
+      [{ key: 'due', label: 'Prazo', type: 'date', value: t.due }, { key: 'pillarId', label: 'Pilar ou área', type: 'select', options: areaOpts(), value: t.pillarId }],
       { key: 'goalId', label: 'Faz parte do objetivo', type: 'select', options: goalOpts, value: t.goalId },
       { key: 'note', label: 'Notas', type: 'textarea', value: t.note, rows: 2 },
     ],
@@ -426,7 +443,7 @@ function goalForm(g = null, pre = {}) {
     fields: [
       { key: 'title', label: 'Objetivo', value: g.title, required: true, ph: 'Ex.: fazer a inscrição no hackathon' },
       [{ key: 'month', label: 'Mês', type: 'select', value: g.month, options: months.map(m => ({ v: m, l: cap(monthLabel(m)) })) },
-       { key: 'pillarId', label: 'Pilar', type: 'select', options: pillarOpts(), value: g.pillarId }],
+       { key: 'pillarId', label: 'Pilar ou área', type: 'select', options: areaOpts(), value: g.pillarId }],
     ],
     onSubmit: v => { if (isNew) S.goals.push({ id: uid(), done: false, ...v }); else Object.assign(g, v); },
     onDelete: isNew ? null : () => {
@@ -519,7 +536,7 @@ function activityForm(p, a = null) {
     wide: true,
     fields: [
       { key: 'atype', label: 'Tipo de atividade', type: 'select', value: a.atype, options: [{ v: '', l: 'Escolha o tipo' }, ...ACTIVITY_TYPES.map(t => ({ v: t, l: t }))] },
-      { key: 'title', label: 'Cargo / liderança', value: a.title, limit: 50, required: true, ph: 'Ex.: Fundadora e presidente' },
+      { key: 'title', label: 'Cargo / liderança', value: a.title, limit: 50, ph: 'Ex.: Fundadora e presidente' },
       { key: 'org', label: 'Organização', value: a.org, limit: 100, ph: 'Ex.: Clube de Programação da escola' },
       { key: 'note', label: 'Descrição', type: 'textarea', value: a.note, limit: 150, rows: 3, hint: 'O que você fez, o impacto, números. Verbos no passado ou presente, sem "eu".' },
       { key: 'grades', label: 'Anos de participação', type: 'multi', value: a.grades, options: GRADES, hint: GRADE_HINT },
@@ -527,8 +544,9 @@ function activityForm(p, a = null) {
       [{ key: 'hours', label: 'Horas por semana', type: 'number', value: a.hours }, { key: 'weeks', label: 'Semanas por ano', type: 'number', value: a.weeks }],
     ],
     onSubmit: v => {
-      if (isNew) p.items.push({ id: uid(), done: false, ...v });
+      if (isNew) p.items.push(a = { id: uid(), ...v });
       else Object.assign(a, v);
+      a.done = sheetDone(p, a);
     },
     onDelete: isNew ? null : () => { p.items = p.items.filter(x => x.id !== a.id); },
     confirmText: 'Excluir esta atividade?',
@@ -541,11 +559,11 @@ function honorForm(p, h = null) {
   openForm({
     title: isNew ? 'Nova honor' : 'Ficha da honor',
     fields: [
-      { key: 'title', label: 'Título da honraria', value: h.title, limit: 100, required: true, ph: 'Ex.: Medalha de prata — OBMEP' },
+      { key: 'title', label: 'Título da honraria', value: h.title, limit: 100, ph: 'Ex.: Medalha de prata — OBMEP' },
       { key: 'grades', label: 'Anos', type: 'multi', value: h.grades, options: GRADES, hint: GRADE_HINT },
       { key: 'level', label: 'Nível de reconhecimento', type: 'radio', value: h.level, options: HONOR_LEVELS.map(t => ({ v: t, l: t })) },
     ],
-    onSubmit: v => { if (isNew) p.items.push({ id: uid(), done: false, ...v }); else Object.assign(h, v); },
+    onSubmit: v => { if (isNew) p.items.push(h = { id: uid(), ...v }); else Object.assign(h, v); h.done = sheetDone(p, h); },
     onDelete: isNew ? null : () => { p.items = p.items.filter(x => x.id !== h.id); },
     confirmText: 'Excluir esta honor?',
   });
@@ -733,12 +751,12 @@ const dateChip = (s, done) => {
 };
 
 function taskRow(t, { showGoal = true, showPillar = true } = {}) {
-  const p = t.pillarId && pillar(t.pillarId), g = t.goalId && goal(t.goalId);
+  const p = areaName(t.pillarId), g = t.goalId && goal(t.goalId);
   return `<li class="row ${t.done ? 'done' : ''}">
     <button class="chk round ${t.done ? 'on' : ''}" data-a="toggle-task" data-id="${t.id}" aria-label="${t.done ? 'Reabrir' : 'Concluir'} tarefa">${ic('check', 13)}</button>
     <button class="row-main" data-a="edit-task" data-id="${t.id}">
       <div class="row-title">${esc(t.title)}</div>
-      <div class="row-meta">${dateChip(t.due, t.done)}${t.meetId && S.profile.mentoria !== false ? '<span class="chip k-ochre kind">Mentoria</span>' : ''}${showPillar && p ? `<span class="chip">${esc(p.name)}</span>` : ''}${showGoal && g ? `<span class="chip ok">${ic('target', 12)}${esc(g.title)}</span>` : ''}</div>
+      <div class="row-meta">${dateChip(t.due, t.done)}${t.meetId && S.profile.mentoria !== false ? '<span class="chip k-ochre kind">Mentoria</span>' : ''}${showPillar && p ? `<span class="chip">${esc(p)}</span>` : ''}${showGoal && g ? `<span class="chip ok">${ic('target', 12)}${esc(g.title)}</span>` : ''}</div>
     </button>
   </li>`;
 }
@@ -899,12 +917,12 @@ function vOverview() {
 
 function goalRow(g) {
   const ts = S.tasks.filter(t => t.goalId === g.id);
-  const p = g.pillarId && pillar(g.pillarId);
+  const p = areaName(g.pillarId);
   return `<li class="row ${g.done ? 'done' : ''}">
     <button class="chk ${g.done ? 'on' : ''}" data-a="toggle-goal" data-id="${g.id}" aria-label="Concluir objetivo">${ic('check', 13)}</button>
     <a class="row-main" href="#/plano" style="text-decoration:none">
       <div class="row-title">${esc(g.title)}</div>
-      <div class="row-meta">${p ? `<span class="chip">${esc(p.name)}</span>` : ''}${ts.length ? `<span class="chip mono">${ts.filter(t => t.done).length}/${ts.length} tarefas</span>` : ''}</div>
+      <div class="row-meta">${p ? `<span class="chip">${esc(p)}</span>` : ''}${ts.length ? `<span class="chip mono">${ts.filter(t => t.done).length}/${ts.length} tarefas</span>` : ''}</div>
     </a></li>`;
 }
 
@@ -960,15 +978,15 @@ function vPillar(id) {
     const isAct = p.type === 'activities';
     const slots = Math.max(0, (p.target || 0) - p.items.length);
     list = `<section>
-      <div class="sec-head"><h2 class="sec">${isAct ? 'Atividades' : 'Honors'}</h2><span class="muted" style="font-size:12.5px">na ordem em que vão para a Common App</span><span class="sp"></span><button class="btn ghost sm" data-a="add-item" data-p="${p.id}">${ic('plus', 15)}${isAct ? 'Atividade' : 'Honor'}</button></div>
+      <div class="sec-head"><h2 class="sec">${isAct ? 'Atividades' : 'Honors'}</h2><span class="muted" style="font-size:12.5px">na ordem em que vão para a Common App · a ficha fica pronta quando todos os campos estão preenchidos</span><span class="sp"></span><button class="btn ghost sm" data-a="add-item" data-p="${p.id}">${ic('plus', 15)}${isAct ? 'Atividade' : 'Honor'}</button></div>
       <div class="sheets">
         ${p.items.map((a, idx) => {
-          const missing = isAct ? ['atype', 'title', 'org', 'note', 'timing', 'hours', 'weeks'].filter(k => !a[k]).length + (a.grades?.length ? 0 : 1) : (!a.title) + (!a.level) + (a.grades?.length ? 0 : 1);
+          const missing = sheetMissing(p, a);
           return `<article class="sheet ${a.done ? 'done' : ''}">
             <div class="sheet-n">${pad(idx + 1)}</div>
             <button class="row-main" data-a="edit-item" data-p="${p.id}" data-id="${a.id}">
               ${isAct ? `<div class="sheet-type">${esc(a.atype || 'Tipo não definido')}</div>` : `<div class="sheet-type">${esc(a.level || 'Nível não definido')}</div>`}
-              <div class="sheet-title">${esc(a.title || 'Sem título')}${isAct && a.org ? `<span class="org"> · ${esc(a.org)}</span>` : ''}</div>
+              <div class="sheet-title">${a.title ? `${esc(a.title)}${isAct && a.org ? `<span class="org"> · ${esc(a.org)}</span>` : ''}` : esc(isAct && a.org || 'Sem título')}</div>
               ${isAct ? `<div class="sheet-desc ${a.note ? '' : 'missing'}">${a.note ? esc(a.note) : 'Descrição ainda não escrita'}</div>` : ''}
               <div class="sheet-facts">
                 ${a.grades?.length ? `<span class="chip">${a.grades.map(g => GRADES.find(x => x.v === g)?.l || g).join(' · ')}</span>` : ''}
@@ -979,7 +997,7 @@ function vPillar(id) {
               </div>
             </button>
             <div class="sheet-side">
-              <button class="chk ${a.done ? 'on' : ''}" data-a="toggle-item" data-p="${p.id}" data-id="${a.id}" aria-label="Marcar como pronta" title="Ficha pronta">${ic('check', 13)}</button>
+              <span class="chk ${a.done ? 'on' : ''}" role="img" aria-label="${a.done ? 'Ficha pronta' : 'Ficha incompleta'}" title="${a.done ? 'Ficha pronta' : 'Fica pronta quando todos os campos estiverem preenchidos'}">${ic('check', 13)}</span>
               <button class="icon-btn sm" data-a="move-item" data-p="${p.id}" data-id="${a.id}" data-d="-1" aria-label="Subir" ${idx === 0 ? 'disabled' : ''}>${ic('up', 15)}</button>
               <button class="icon-btn sm" data-a="move-item" data-p="${p.id}" data-id="${a.id}" data-d="1" aria-label="Descer" ${idx === p.items.length - 1 ? 'disabled' : ''}>${ic('down', 15)}</button>
             </div>
@@ -1023,7 +1041,7 @@ function vPillar(id) {
 
 function goalCard(g) {
   const ts = S.tasks.filter(t => t.goalId === g.id).sort((a, b) => (a.done - b.done) || (a.due || '9').localeCompare(b.due || '9'));
-  const p = g.pillarId && pillar(g.pillarId);
+  const p = areaName(g.pillarId);
   const dn = ts.filter(t => t.done).length;
   return `<article class="card goal ${g.done ? 'done' : ''}">
     <div class="goal-top">
@@ -1031,7 +1049,7 @@ function goalCard(g) {
       <h3>${esc(g.title)}</h3>
       <button class="icon-btn sm" data-a="edit-goal" data-id="${g.id}" aria-label="Editar objetivo">${ic('edit', 15)}</button>
     </div>
-    <div class="row-meta" style="margin:0">${p ? `<a class="chip" href="#/pillar/${p.id}" style="text-decoration:none">${esc(p.name)}</a>` : ''}<span class="chip mono">${dn}/${ts.length} tarefas</span></div>
+    <div class="row-meta" style="margin:0">${p ? `<a class="chip" href="${areaHref(g.pillarId)}" style="text-decoration:none">${esc(p)}</a>` : ''}<span class="chip mono">${dn}/${ts.length} tarefas</span></div>
     ${ts.length ? `<div class="bar"><i style="width:${dn / ts.length * 100}%"></i></div>` : ''}
     ${ts.length ? `<ul class="rows">${ts.map(t => taskRow(t, { showGoal: false, showPillar: false })).join('')}</ul>` : '<p class="muted" style="margin:0;font-size:13px">O que você precisa fazer para cumprir este objetivo?</p>'}
     <div style="display:flex;gap:16px;flex-wrap:wrap">
@@ -1289,6 +1307,7 @@ tr:nth-child(even) td { background: #F6F4EF; }
 function vColleges() {
   const { columns } = S.colleges;
   const rows = sortedColleges();
+  const tasks = S.tasks.filter(t => t.pillarId === COLLEGE_TAG).sort((a, b) => (a.done - b.done) || (a.due || '9').localeCompare(b.due || '9'));
   const catCol = columns.find(c => c.type === 'select' && /categoria/i.test(c.name));
   const summary = catCol ? catCol.options.map(o => `<span class="chip tone-${o.tone}">${esc(o.label)} <b class="mono">${S.colleges.rows.filter(r => r.cells[catCol.id] === o.id).length}</b></span>`).join('') : '';
   return `<div class="page">
@@ -1314,6 +1333,10 @@ function vColleges() {
       ${rows.length ? '' : `<div style="padding:16px"><div class="empty">Nenhuma faculdade ainda.<br><button class="btn ghost sm" data-a="add-row">${ic('plus', 15)}Adicionar a primeira</button></div></div>`}
     </section>
     <p class="muted" style="font-size:12.5px;margin-top:12px">Clique no nome de uma coluna para renomear, mudar o tipo ou editar as opções. Colunas do tipo Data aparecem no calendário. A exportação segue a ordenação escolhida.</p>
+    <section class="card" style="margin-top:18px">
+      <div class="sec-head"><h2 class="sec">Tarefas da college list</h2><span class="sp"></span><button class="link-btn" data-a="add-task" data-pillar="${COLLEGE_TAG}">${ic('plus', 14)}Tarefa</button></div>
+      ${tasks.length ? `<ul class="rows">${tasks.map(t => taskRow(t, { showPillar: false })).join('')}</ul>` : '<div class="empty">Ex.: montar a lista longa, pesquisar os suplementos de cada faculdade, marcar uma visita virtual.</div>'}
+    </section>
   </div>`;
 }
 
@@ -1372,7 +1395,7 @@ function vNotes() {
       ${n ? `<section class="card note-editor">
         <div class="note-bar">
           <button class="btn ghost sm note-back" data-a="close-note">${ic('left', 15)}Notas</button>
-          <select data-c="note-pillar" class="inline-select">${[...pillarOpts('Sem pilar'), ...(S.profile.mentoria !== false || n.pillarId === MENTOR_TAG ? [{ v: MENTOR_TAG, l: 'Mentoria' }] : [])].map(o => `<option value="${o.v}" ${o.v === n.pillarId ? 'selected' : ''}>${esc(o.l)}</option>`).join('')}</select>
+          <select data-c="note-pillar" class="inline-select">${[...areaOpts('Sem pilar'), ...(S.profile.mentoria !== false || n.pillarId === MENTOR_TAG ? [{ v: MENTOR_TAG, l: 'Mentoria' }] : [])].map(o => `<option value="${o.v}" ${o.v === n.pillarId ? 'selected' : ''}>${esc(o.l)}</option>`).join('')}</select>
           ${nm ? `<a class="chip k-ochre kind" href="#/plano" style="text-decoration:none">Reunião de ${fmt(nm.date)}</a>` : ''}
           <span class="sp"></span>
           <button class="btn ghost sm" data-a="note-task" title="Cria uma tarefa com a linha onde está o cursor (ou com as linhas selecionadas)">${ic('list', 15)}Virar tarefa</button>
