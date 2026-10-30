@@ -1,0 +1,16 @@
+{
+  "name": "Dossiê — application EUA",
+  "short_name": "Dossiê",
+  "description": "Painel para organizar a application para universidades dos Estados Unidos.",
+  "lang": "pt-BR",
+  "start_url": "./#/overview",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F1EFE8",
+  "theme_color": "#F1EFE8",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
