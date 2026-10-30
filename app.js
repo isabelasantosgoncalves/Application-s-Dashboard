@@ -535,9 +535,9 @@ function activityForm(p, a = null) {
     title: isNew ? 'Nova atividade' : 'Ficha da atividade',
     wide: true,
     fields: [
+      { key: 'org', label: 'Nome da atividade', value: a.org, limit: 100, ph: 'Ex.: Clube de Programação da escola', hint: 'Na Common App, vai no campo "Organization name".' },
       { key: 'atype', label: 'Tipo de atividade', type: 'select', value: a.atype, options: [{ v: '', l: 'Escolha o tipo' }, ...ACTIVITY_TYPES.map(t => ({ v: t, l: t }))] },
-      { key: 'title', label: 'Cargo / liderança', value: a.title, limit: 50, ph: 'Ex.: Fundadora e presidente' },
-      { key: 'org', label: 'Organização', value: a.org, limit: 100, ph: 'Ex.: Clube de Programação da escola' },
+      { key: 'title', label: 'Seu papel', value: a.title, limit: 50, ph: 'Ex.: Fundadora e presidente', hint: 'Cargo ou função que você teve. Na Common App, "Position/Leadership description".' },
       { key: 'note', label: 'Descrição', type: 'textarea', value: a.note, limit: 150, rows: 3, hint: 'O que você fez, o impacto, números. Verbos no passado ou presente, sem "eu".' },
       { key: 'grades', label: 'Anos de participação', type: 'multi', value: a.grades, options: GRADES, hint: GRADE_HINT },
       { key: 'timing', label: 'Quando', type: 'radio', value: a.timing, options: TIMING.map(t => ({ v: t, l: t })) },
@@ -986,7 +986,7 @@ function vPillar(id) {
             <div class="sheet-n">${pad(idx + 1)}</div>
             <button class="row-main" data-a="edit-item" data-p="${p.id}" data-id="${a.id}">
               ${isAct ? `<div class="sheet-type">${esc(a.atype || 'Tipo não definido')}</div>` : `<div class="sheet-type">${esc(a.level || 'Nível não definido')}</div>`}
-              <div class="sheet-title">${a.title ? `${esc(a.title)}${isAct && a.org ? `<span class="org"> · ${esc(a.org)}</span>` : ''}` : esc(isAct && a.org || 'Sem título')}</div>
+              <div class="sheet-title">${isAct ? `${esc(a.org || a.title || 'Sem nome')}${a.org && a.title ? `<span class="org"> · ${esc(a.title)}</span>` : ''}` : esc(a.title || 'Sem título')}</div>
               ${isAct ? `<div class="sheet-desc ${a.note ? '' : 'missing'}">${a.note ? esc(a.note) : 'Descrição ainda não escrita'}</div>` : ''}
               <div class="sheet-facts">
                 ${a.grades?.length ? `<span class="chip">${a.grades.map(g => GRADES.find(x => x.v === g)?.l || g).join(' · ')}</span>` : ''}
