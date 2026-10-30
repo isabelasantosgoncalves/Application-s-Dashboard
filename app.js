@@ -86,7 +86,6 @@ const DEADLINE_KINDS = ['Prazo', 'Prova', 'Inscrição', 'Faculdade'];
 
 /* ================= State ================= */
 let S = null;
-try { S = migrate(JSON.parse(localStorage.getItem(KEY))); } catch { S = null; }
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); }
   catch { toast('Não foi possível salvar neste navegador'); }
@@ -150,9 +149,33 @@ function ensureQuestionsNote() {
 }
 
 /* Older saves: mentoring used to keep agenda/notes inside the meeting, and questions as a checklist */
+/* Default pillar descriptions: each one says what the pillar is. OLD_DESC maps the
+   first wording to the new one, so saves that never edited it get the update. */
+const PILLAR_DESC = {
+  sat: 'Prova padronizada americana de Matemática e de Leitura e Escrita, que as faculdades usam para comparar candidatos de escolas diferentes.',
+  eng: 'Prova que comprova o seu nível de inglês, pedida pelas faculdades a quem não estudou em escola de língua inglesa.',
+  ecs: 'O que você faz fora da sala de aula, como clubes, esportes, trabalho e voluntariado, e que mostra seus interesses e o seu impacto.',
+  hon: 'Prêmios e reconhecimentos que você recebeu pelo seu desempenho, como olimpíadas, competições e distinções acadêmicas.',
+  red: 'Os textos em que você se apresenta: o Personal Statement, enviado a todas as faculdades, e os suplementos que cada uma pede.',
+  rec: 'Cartas em que o counselor e os professores falam de você, do seu desempenho e do seu jeito de ser.',
+  acad: 'Os registros da sua vida escolar, como histórico e notas, que a escola envia às faculdades.',
+  fin: 'A ajuda das faculdades para pagar o curso, em bolsas por necessidade (pela renda da família) ou por mérito (pelo seu desempenho).',
+};
+const OLD_DESC = {
+  'Estudo dividido em fases. O pilar fecha quando a última fase e a prova oficial estiverem feitas.': 'sat',
+  'Prova de proficiência pedida a estudantes internacionais.': 'eng',
+  'A Common App aceita até 10 atividades, em ordem de importância. Cada ficha fica pronta quando todos os campos estão preenchidos.': 'ecs',
+  'Até 5 honrarias na Common App, com título de até 100 caracteres.': 'hon',
+  'Personal Statement (até 650 palavras) e suplementos de cada faculdade.': 'red',
+  'Em geral, uma carta do counselor e duas de professores.': 'rec',
+  'Histórico, tradução e documentos da escola.': 'acad',
+  'Bolsas por necessidade e por mérito.': 'fin',
+};
+
 function migrate(s) {
   if (!s) return s;
   if (s.profile.mentoria === undefined) s.profile.mentoria = true;
+  s.pillars.forEach(p => { const k = OLD_DESC[p.desc]; if (k) p.desc = PILLAR_DESC[k]; });
   s.meetings.forEach(m => {
     if (m.agenda || m.notes || m.next) {
       const body = [m.agenda && `Pauta\n${m.agenda}`, m.notes && `Anotações\n${m.notes}`, m.next && `Próximos passos\n${m.next}`].filter(Boolean).join('\n\n');
@@ -170,6 +193,8 @@ function migrate(s) {
   }
   return s;
 }
+// Load after migrate's constants exist (they are const, so not hoisted).
+try { S = migrate(JSON.parse(localStorage.getItem(KEY))); } catch { S = null; }
 
 /* ================= Seed ================= */
 function seed({ name, cycle, test, mode, mentor = true }) {
@@ -180,7 +205,7 @@ function seed({ name, cycle, test, mode, mentor = true }) {
   const P = o => { const p = { id: uid(), type: 'checklist', name: '', desc: '', target: null, items: [], ...o }; if (mode !== 'zero') pillars.push(p); return p; };
 
   const sat = P({
-    name: 'SAT', desc: 'Estudo dividido em fases. O pilar fecha quando a última fase e a prova oficial estiverem feitas.',
+    name: 'SAT', desc: PILLAR_DESC.sat,
     items: [
       it('Diagnóstico inicial', ex ? { done: true, date: d(-18), note: 'Simulado oficial do Bluebook para medir o ponto de partida.' } : {}),
       it('Fase 1 — Fundamentos', ex ? { date: d(30), subs: [sub('Math: álgebra e funções', true), sub('Reading: vocabulário em contexto'), sub('Writing: regras de pontuação')] } : {}),
@@ -190,12 +215,12 @@ function seed({ name, cycle, test, mode, mentor = true }) {
     ],
   });
   if (test !== 'none') P({
-    name: `Inglês — ${test}`, desc: 'Prova de proficiência pedida a estudantes internacionais.',
+    name: `Inglês — ${test}`, desc: PILLAR_DESC.eng,
     items: [it('Simulado inicial'), it('Preparação'), it('Prova oficial'), it('Enviar score às faculdades')],
   });
   const ecs = P({
     type: 'activities', name: 'Extracurriculares', target: 8,
-    desc: 'A Common App aceita até 10 atividades, em ordem de importância. Cada ficha fica pronta quando todos os campos estão preenchidos.',
+    desc: PILLAR_DESC.ecs,
     items: ex ? [
       { id: uid(), done: true, atype: 'Computer/Technology', title: 'Fundadora e presidente', org: 'Clube de Programação da escola', note: 'Fundei o clube com 3 colegas; hoje são 24 membros. Ensino Python toda semana e lançamos 2 apps usados pela escola.', grades: ['10', '11'], timing: 'Durante as aulas', hours: '4', weeks: '36' },
       { id: uid(), done: false, atype: 'Community Service (Volunteer)', title: 'Tutora voluntária', org: 'ONG de reforço escolar', note: '', grades: ['11'], timing: 'Ano todo', hours: '3', weeks: '40' },
@@ -203,23 +228,23 @@ function seed({ name, cycle, test, mode, mentor = true }) {
   });
   P({
     type: 'honors', name: 'Honors', target: 5,
-    desc: 'Até 5 honrarias na Common App, com título de até 100 caracteres.',
+    desc: PILLAR_DESC.hon,
     items: ex ? [{ id: uid(), done: true, title: 'Medalha de bronze — Olimpíada Brasileira de Matemática (OBMEP)', grades: ['10'], level: 'Nacional' }] : [],
   });
   const red = P({
-    name: 'Redações', desc: 'Personal Statement (até 650 palavras) e suplementos de cada faculdade.',
+    name: 'Redações', desc: PILLAR_DESC.red,
     items: [it('Brainstorm de temas'), it('Personal Statement — rascunho'), it('Personal Statement — revisão'), it('Personal Statement — versão final'), it('Suplementos')],
   });
   P({
-    name: 'Recomendações', desc: 'Em geral, uma carta do counselor e duas de professores.',
+    name: 'Recomendações', desc: PILLAR_DESC.rec,
     items: [it('Escolher os professores'), it('Enviar brag sheet'), it('Carta do counselor'), it('Carta — professor 1'), it('Carta — professor 2')],
   });
   const acad = P({
-    name: 'Documentos acadêmicos', desc: 'Histórico, tradução e documentos da escola.',
+    name: 'Documentos acadêmicos', desc: PILLAR_DESC.acad,
     items: [it('Histórico escolar'), it('Tradução juramentada'), it('School profile'), it('Previsão de notas')],
   });
   P({
-    name: 'Financial aid', desc: 'Bolsas por necessidade e por mérito.',
+    name: 'Financial aid', desc: PILLAR_DESC.fin,
     items: [it('CSS Profile'), it('ISFAA'), it('Comprovação de renda'), it('Certificação de recursos')],
   });
 
