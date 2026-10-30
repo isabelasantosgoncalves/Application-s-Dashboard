@@ -626,7 +626,7 @@ button.row-main:hover .row-title { text-decoration: underline; text-underline-of
 .welcome .intro p { margin: 0; color: var(--ink-2); }
 .welcome .body { padding: 14px 28px 4px; }
 .welcome footer { padding: 18px 28px 26px; }
-.choice { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.choice { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .choice label {
   display: block; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: #fff; cursor: pointer;
 }

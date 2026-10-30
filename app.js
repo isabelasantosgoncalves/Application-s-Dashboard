@@ -177,7 +177,7 @@ function seed({ name, cycle, test, mode, mentor = true }) {
   const it = (title, o = {}) => ({ id: uid(), title, done: false, date: '', note: '', subs: [], ...o });
   const sub = (title, done = false) => ({ id: uid(), title, done });
   const pillars = [];
-  const P = o => { const p = { id: uid(), type: 'checklist', name: '', desc: '', target: null, items: [], ...o }; pillars.push(p); return p; };
+  const P = o => { const p = { id: uid(), type: 'checklist', name: '', desc: '', target: null, items: [], ...o }; if (mode !== 'zero') pillars.push(p); return p; };
 
   const sat = P({
     name: 'SAT', desc: 'Estudo dividido em fases. O pilar fecha quando a última fase e a prova oficial estiverem feitas.',
@@ -646,8 +646,9 @@ function profileForm(first = false) {
         ${fields.map(fieldHTML).join('')}
         <div class="field"><span>Como começar</span>
           <div class="choice">
-            <label><input type="radio" name="mode" value="examples" checked><b>Com exemplos</b><small>SAT em fases, inscrição de hackathon, uma college list curta. Dá pra apagar depois.</small></label>
-            <label><input type="radio" name="mode" value="blank"><b>Só a estrutura</b><small>Pilares prontos e o resto vazio, para preencher do zero.</small></label>
+            <label><input type="radio" name="mode" value="examples" checked><b>Com exemplos</b><small>Pilares, plano, prazos e uma college list curta já preenchidos. Dá pra apagar depois.</small></label>
+            <label><input type="radio" name="mode" value="blank"><b>Só os pilares</b><small>SAT, redações, recomendações e os outros pilares prontos, sem nada dentro.</small></label>
+            <label><input type="radio" name="mode" value="zero"><b>Do zero</b><small>Nenhum pilar e nada preenchido. Você cria tudo do seu jeito.</small></label>
           </div>
         </div>
       </div>
