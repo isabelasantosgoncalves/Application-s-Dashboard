@@ -84,7 +84,8 @@ const DOC_STATUS = ['Pendente', 'Em andamento', 'Pronto', 'Enviado'];
 const COL_TYPES = [{ v: 'text', l: 'Texto' }, { v: 'number', l: 'Número' }, { v: 'select', l: 'Seleção' }, { v: 'date', l: 'Data' }, { v: 'url', l: 'Link' }, { v: 'checkbox', l: 'Caixa de seleção' }];
 const COL_ABBR = { text: 'Aa', number: '#', select: '▾', date: 'dt', url: '↗', checkbox: '☐' };
 const KIND = { Prazo: 'red', Prova: 'ink', 'Inscrição': 'green', Evento: 'slate', Mentoria: 'ochre', Marco: 'sage', Tarefa: 'gray', Faculdade: 'red' };
-const DEADLINE_KINDS = ['Prazo', 'Prova', 'Inscrição', 'Faculdade'];
+// Any date the student sets counts as a deadline; a mentoring meeting is an appointment
+const isDeadline = e => e.kind !== 'Mentoria';
 
 /* ================= State ================= */
 let S = null;
@@ -162,18 +163,50 @@ const period = (start, end) => start ? `${fmt(start)} → ${fmt(end)}` : fmt(end
 /* Everything with a date, in one list */
 function agenda() {
   const out = [];
-  S.events.forEach(e => e.date && out.push({ start: e.start, date: e.date, title: e.title, kind: e.type, ref: { t: 'event', id: e.id } }));
-  S.tasks.forEach(t => t.due && out.push({ start: t.start, date: t.due, title: t.title, kind: 'Tarefa', done: t.done, ref: { t: 'task', id: t.id } }));
-  S.pillars.forEach(p => p.items.forEach(i => i.date && out.push({ start: i.start, date: i.date, title: i.title, sub: p.name, kind: 'Marco', done: i.done, ref: { t: 'item', pid: p.id, id: i.id } })));
+  S.events.forEach(e => e.date && out.push({ start: e.start, date: e.date, title: e.title, kind: e.type, prio: prioOf(e, 'event'), ref: { t: 'event', id: e.id } }));
+  S.tasks.forEach(t => t.due && out.push({ start: t.start, date: t.due, title: t.title, kind: 'Tarefa', done: t.done, prio: prioOf(t), ref: { t: 'task', id: t.id } }));
+  S.pillars.forEach(p => p.items.forEach(i => i.date && out.push({ start: i.start, date: i.date, title: i.title, sub: p.name, kind: 'Marco', done: i.done, prio: prioOf(i), ref: { t: 'item', pid: p.id, id: i.id } })));
   if (S.profile.mentoria !== false) S.meetings.forEach(m => m.date && out.push({ date: m.date, title: m.title || 'Mentoria', kind: 'Mentoria', ref: { t: 'meet', id: m.id } }));
   const nameCol = S.colleges.columns[0];
   S.colleges.columns.filter(c => c.type === 'date').forEach(c => S.colleges.rows.forEach(r => {
     const v = r.cells[c.id];
-    if (v) out.push({ date: v, title: `${r.cells[nameCol?.id] || 'Faculdade'} — ${c.name}`, kind: 'Faculdade', ref: { t: 'college' } });
+    if (v) out.push({ date: v, title: `${r.cells[nameCol?.id] || 'Faculdade'} — ${c.name}`, kind: 'Faculdade', prio: 'alta', ref: { t: 'college' } });
   }));
   return out.sort((a, b) => a.date.localeCompare(b.date));
 }
-const nextDeadline = () => agenda().find(e => DEADLINE_KINDS.includes(e.kind) && e.date >= today() && !e.done);
+/* Priority: alta, normal or baixa. Without a choice, events that are deadlines
+   (Prazo, Prova, Inscrição) are alta, everything else normal. */
+const PRIO = { alta: 3, normal: 2, baixa: 1 };
+const PRIO_OPTS = [{ v: 'alta', l: 'Alta' }, { v: 'normal', l: 'Normal' }, { v: 'baixa', l: 'Baixa' }];
+const prioOf = (x, t) => x.prio || (t === 'event' && x.type !== 'Evento' ? 'alta' : 'normal');
+const prioChip = pr => pr === 'alta' ? '<span class="chip prio-alta">Alta</span>' : '';
+
+/* The deadline the overview leads with: the most important one in the next 30 days
+   (earliest on a tie), or simply the next one. Anything due before it is listed apart. */
+function focusDeadline() {
+  const T = today();
+  const up = agenda().filter(e => isDeadline(e) && e.date >= T && !e.done);
+  const soon = up.filter(e => e.date <= addDays(T, 30));
+  const main = soon.length ? soon.reduce((a, e) => PRIO[e.prio] > PRIO[a.prio] ? e : a) : up[0];
+  return { main, before: main ? up.filter(e => e.date < main.date) : [] };
+}
+
+/* Open things with a date: tasks plus dated milestones of checklist pillars.
+   A milestone isn't a task, but once it has a date it is something to do. */
+function openWork() {
+  const tasks = S.tasks.map(t => ({ due: t.due, done: t.done, row: () => taskRow(t) }));
+  const items = S.pillars.filter(p => p.type === 'checklist').flatMap(p => p.items.filter(i => i.date).map(i => ({ due: i.date, done: i.done, row: () => itemRow(p, i) })));
+  return [...tasks, ...items];
+}
+function itemRow(p, i) {
+  return `<li class="row ${i.done ? 'done' : ''}">
+    <button class="chk ${i.done ? 'on' : ''}" data-a="toggle-item" data-p="${p.id}" data-id="${i.id}" aria-label="${i.done ? 'Reabrir' : 'Concluir'} marco">${ic('check', 13)}</button>
+    <button class="row-main" data-a="edit-item" data-p="${p.id}" data-id="${i.id}">
+      <div class="row-title">${esc(i.title)}</div>
+      <div class="row-meta">${dateChip(i.date, i.done, i.start)}${i.done ? '' : prioChip(i.prio)}<span class="chip k-sage kind">Marco</span><a class="chip" href="#/pillar/${p.id}" style="text-decoration:none">${esc(p.name)}</a></div>
+    </button>
+  </li>`;
+}
 
 /* Notes can be tagged "Mentoria" instead of a pillar */
 const MENTOR_TAG = 'mentoria';
@@ -496,6 +529,7 @@ function taskForm(t = null, pre = {}) {
       { key: 'title', label: 'Tarefa', value: t.title, required: true, ph: 'Ex.: gravar o vídeo do hackathon' },
       [{ key: 'start', label: 'Começar em (opcional)', type: 'date', value: t.start || '' }, { key: 'due', label: 'Prazo', type: 'date', value: t.due }],
       { key: 'pillarId', label: 'Pilar ou área', type: 'select', options: areaOpts(), value: t.pillarId },
+      { key: 'prio', label: 'Prioridade', type: 'radio', value: prioOf(t), options: PRIO_OPTS },
       { key: 'goalId', label: 'Faz parte do objetivo', type: 'select', options: goalOpts, value: t.goalId },
       { key: 'note', label: 'Notas', type: 'textarea', value: t.note, rows: 2 },
     ],
@@ -581,6 +615,7 @@ function itemForm(p, item = null) {
     fields: [
       { key: 'title', label: 'Título', value: item.title, required: true },
       [{ key: 'start', label: 'Início (opcional)', type: 'date', value: item.start || '' }, { key: 'date', label: 'Data prevista', type: 'date', value: item.date }],
+      { key: 'prio', label: 'Prioridade', type: 'radio', value: prioOf(item), options: PRIO_OPTS },
       { key: 'note', label: 'Notas', type: 'textarea', value: item.note, rows: 3 },
       { type: 'html', html: `<div class="field"><span>Subtarefas</span><div id="subs">${subsHTML()}</div>
         <div class="subs-add"><input id="sub-in" placeholder="Nova subtarefa" style="border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:#fff"><button type="button" class="btn ghost sm" id="sub-add">${ic('plus', 15)}Adicionar</button></div></div>` },
@@ -657,6 +692,7 @@ function eventForm(ev = null, pre = {}) {
       { key: 'title', label: 'Título', value: ev.title, required: true, ph: 'Ex.: Inscrição no hackathon' },
       { key: 'type', label: 'Tipo', type: 'select', value: ev.type, options: EVENT_TYPES.map(t => ({ v: t, l: t })) },
       [{ key: 'start', label: 'Início (opcional)', type: 'date', value: ev.start || '' }, { key: 'date', label: 'Data ou fim', type: 'date', value: ev.date, required: true }],
+      { key: 'prio', label: 'Prioridade', type: 'radio', value: prioOf(ev, 'event'), options: PRIO_OPTS, hint: 'Prazos, provas e inscrições começam como alta.' },
       { key: 'docs', label: 'O que preciso entregar (um por linha)', type: 'textarea', value: ev.docs.map(d => d.title).join('\n'), rows: 3, hint: 'Cada linha vira um item marcável. Depois dá pra transformar em tarefas.' },
       { key: 'note', label: 'Notas', type: 'textarea', value: ev.note, rows: 2 },
     ],
@@ -665,7 +701,7 @@ function eventForm(ev = null, pre = {}) {
       if (err) { toast(err); return false; }
       const lines = v.docs.split('\n').map(s => s.trim()).filter(Boolean);
       const docs = lines.map(l => ev.docs.find(d => d.title === l) || { id: uid(), title: l, done: false });
-      const data = { title: v.title, start: v.start, date: v.date, type: v.type, note: v.note, docs };
+      const data = { title: v.title, start: v.start, date: v.date, type: v.type, prio: v.prio, note: v.note, docs };
       if (isNew) S.events.push({ id: uid(), ...data }); else Object.assign(ev, data);
       ui.selDay = v.date; ui.calMonth = v.date.slice(0, 7);
     },
@@ -801,7 +837,7 @@ const go = r => { location.hash = '#/' + r; };
 function renderSide() {
   const r = routeName() === 'pillar' ? 'pillars' : routeName();
   const counts = { plano: S.tasks.filter(t => !t.done).length, colleges: S.colleges.rows.length, pillars: S.pillars.length };
-  const nd = nextDeadline();
+  const nd = focusDeadline().main;
   $('#side').innerHTML = `
     <div class="brand">
       <div class="brand-name"><img class="brand-logo" src="brand/logo-horizontal.png?v=5" alt="${APP_NAME}" width="140" height="43"></div>
@@ -809,7 +845,7 @@ function renderSide() {
     </div>
     ${NAV.map(([lab, items]) => `<div class="nav-label">${lab}</div><nav class="nav">${items.map(([k, l, i]) => `<a href="#/${k}" class="${r === k ? 'on' : ''}" ${r === k ? 'aria-current="page"' : ''}>${ic(i)}${l}${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}</a>`).join('')}</nav>`).join('')}
     ${nd ? `<a class="side-card" href="#/calendar" data-a="goto-day" data-date="${nd.date}">
-      <div class="eyebrow">Próximo prazo</div>
+      <div class="eyebrow">Prazo principal</div>
       <div class="big">${diffDays(today(), nd.date)}<small>${diffDays(today(), nd.date) === 1 ? 'dia' : 'dias'}</small></div>
       <div class="t">${esc(nd.title)}</div><div class="d">${cap(DIA[parse(nd.date).getDay()])}, ${fmtY(nd.date)}</div>
     </a>` : '<div style="height:24px"></div>'}
@@ -838,7 +874,7 @@ function taskRow(t, { showGoal = true, showPillar = true } = {}) {
     <button class="chk round ${t.done ? 'on' : ''}" data-a="toggle-task" data-id="${t.id}" aria-label="${t.done ? 'Reabrir' : 'Concluir'} tarefa">${ic('check', 13)}</button>
     <button class="row-main" data-a="edit-task" data-id="${t.id}">
       <div class="row-title">${esc(t.title)}</div>
-      <div class="row-meta">${dateChip(t.due, t.done, t.start)}${t.meetId && S.profile.mentoria !== false ? '<span class="chip k-ochre kind">Mentoria</span>' : ''}${showPillar && p ? `<span class="chip">${esc(p)}</span>` : ''}${showGoal && g ? `<span class="chip ok">${ic('target', 12)}${esc(g.title)}</span>` : ''}</div>
+      <div class="row-meta">${dateChip(t.due, t.done, t.start)}${t.done ? '' : prioChip(t.prio)}${t.meetId && S.profile.mentoria !== false ? '<span class="chip k-ochre kind">Mentoria</span>' : ''}${showPillar && p ? `<span class="chip">${esc(p)}</span>` : ''}${showGoal && g ? `<span class="chip ok">${ic('target', 12)}${esc(g.title)}</span>` : ''}</div>
     </button>
   </li>`;
 }
@@ -859,8 +895,8 @@ function ruler() {
     h += `<i class="tick m" style="left:${X(iso(d))}%"></i><span class="tick-label" style="left:${X(iso(d))}%">${MES[d.getMonth()]}${showY ? `<b>${d.getFullYear()}</b>` : ''}</span>`;
   }
   h += `<div class="ruler-past" style="width:${X(T)}%"></div><div class="today" style="left:${X(T)}%"><span>hoje</span></div>`;
-  agenda().filter(e => e.date >= T && e.date < end && e.kind !== 'Tarefa' && !e.done).forEach(m => {
-    h += `<button class="mark k-${KIND[m.kind]}" style="left:${X(m.date)}%;bottom:34px" data-a="goto-ref" data-ref='${esc(JSON.stringify({ ...m.ref, date: m.date }))}' title="${esc(m.kind)} · ${fmt(m.date)} · ${esc(m.title)}">
+  agenda().filter(e => e.date >= T && e.date < end && !e.done).forEach(m => {
+    h += `<button class="mark k-${KIND[m.kind]}" data-pri="${m.kind === 'Mentoria' ? 2 : 3 - PRIO[m.prio]}" style="left:${X(m.date)}%;bottom:34px" data-a="goto-ref" data-ref='${esc(JSON.stringify({ ...m.ref, date: m.date }))}' title="${esc(m.kind)} · ${fmt(m.date)} · ${esc(m.title)}">
       <span class="mark-d">${fmt(m.date)}</span><span class="mark-t">${esc(m.title)}</span></button>`;
   });
   return `<div class="ruler-wrap"><div class="ruler" role="group" aria-label="Linha do tempo dos próximos 7 meses">${h}</div></div>
@@ -875,7 +911,7 @@ function layoutRuler() {
   const clear = (a, z, px) => px < a - GAP || px > z + GAP;
   const marks = [...r.querySelectorAll('.mark')].map(m => {
     m.hidden = false; m.classList.remove('flip'); m.style.paddingBottom = '12px';
-    return { m, x: parseFloat(m.style.left) / 100 * W, w: m.offsetWidth, pri: m.classList.contains('k-ochre') || m.classList.contains('k-sage') || m.classList.contains('k-slate') ? 1 : 0 };
+    return { m, x: parseFloat(m.style.left) / 100 * W, w: m.offsetWidth, pri: +m.dataset.pri };
   });
   const placed = [];
   const spots = k => {
@@ -915,15 +951,16 @@ addEventListener('resize', () => { clearTimeout(layoutRuler.t); layoutRuler.t = 
 document.fonts?.ready.then(() => layoutRuler());
 
 function vOverview() {
-  const T = today(), nd = nextDeadline();
+  const T = today(), { main: nd, before } = focusDeadline();
   const n = nd ? diffDays(T, nd.date) : null;
+  const inDays = d => { const k = diffDays(T, d); return k === 0 ? 'hoje' : k === 1 ? 'amanhã' : `em ${k} dias`; };
   const headline = !nd
-    ? 'Nenhum prazo marcado <span class="when">ainda.</span>'
+    ? 'Nenhuma data marcada <span class="when">ainda.</span>'
     : n === 0 ? `Hoje: <span class="what">${esc(nd.title)}</span>.`
       : `Falta${n === 1 ? '' : 'm'} <span class="n">${n}</span> ${n === 1 ? 'dia' : 'dias'} para <span class="what">${esc(nd.title)}</span>.`;
-  const in30 = agenda().filter(e => DEADLINE_KINDS.includes(e.kind) && e.date >= T && e.date <= addDays(T, 30) && !e.done).length;
+  const in30 = agenda().filter(e => isDeadline(e) && e.date >= T && e.date <= addDays(T, 30) && !e.done).length;
 
-  const weekTasks = S.tasks.filter(t => !t.done && t.due && t.due <= addDays(T, 7)).sort((a, b) => a.due.localeCompare(b.due));
+  const weekTasks = openWork().filter(w => !w.done && w.due && w.due <= addDays(T, 7)).sort((a, b) => a.due.localeCompare(b.due));
   const late = weekTasks.filter(t => t.due < T).length;
   const M = T.slice(0, 7);
   const mGoals = S.goals.filter(g => g.month === M);
@@ -939,11 +976,11 @@ function vOverview() {
         <div>
           <div class="eyebrow"><span class="cycle" title="Semestre em que você entra na faculdade">${esc(S.profile.cycle)}</span>${cap(DIA[parse(T).getDay()])}, ${fmtY(T)}</div>
           <h1>${headline}</h1>
+          ${before.length ? `<div class="hero-before"><span class="eyebrow">Antes disso</span>${before.slice(0, 3).map(e => `<button class="before-item ${PRIO[e.prio] >= 3 ? 'hi' : ''}" data-a="goto-ref" data-ref='${esc(JSON.stringify({ ...e.ref, date: e.date }))}'><b>${esc(e.title)}</b> ${inDays(e.date)}</button>`).join('')}${before.length > 3 ? `<a class="link-btn" href="#/calendar">+${before.length - 3}</a>` : ''}</div>` : ''}
         </div>
         <div class="hero-meta">${S.profile.name ? `Olá, ${esc(S.profile.name)}.` : 'Olá.'}<strong>${plural(in30, 'prazo', 'prazos')} nos próximos 30 dias</strong></div>
       </div>
       ${ruler()}
-      ${!nd ? `<div style="margin-top:6px"><button class="btn ghost sm" data-a="add-event">${ic('plus', 15)}Adicionar um prazo</button></div>` : ''}
     </section>
 
     <div class="grid kpis">
@@ -954,7 +991,7 @@ function vOverview() {
         <div class="s">${doneP} de ${S.pillars.length} pilares concluídos</div>
       </a>
       <a class="card kpi" href="#/plano">
-        <div class="eyebrow">Tarefas da semana</div>
+        <div class="eyebrow">Para esta semana</div>
         <div class="v">${weekTasks.length}<small>abertas</small></div>
         <div class="s">${late ? `<span style="color:var(--red)">${plural(late, 'atrasada', 'atrasadas')}</span>` : 'nada atrasado'}</div>
       </a>
@@ -989,8 +1026,8 @@ function vOverview() {
           ${mGoals.length ? `<ul class="rows">${mGoals.map(g => goalRow(g)).join('')}</ul>` : `<div class="empty">Defina 2 ou 3 objetivos para este mês.<br><button class="btn ghost sm" data-a="add-goal" data-month="${M}">${ic('plus', 15)}Objetivo</button></div>`}
         </section>
         <section class="card">
-          <div class="sec-head"><h2 class="sec">Tarefas desta semana</h2><span class="sp"></span><button class="link-btn" data-a="add-task">${ic('plus', 14)}Tarefa</button></div>
-          ${weekTasks.length ? `<ul class="rows">${weekTasks.slice(0, 7).map(t => taskRow(t)).join('')}</ul>` : '<div class="empty">Nenhuma tarefa com prazo para os próximos 7 dias.</div>'}
+          <div class="sec-head"><h2 class="sec">Para esta semana</h2><span class="sp"></span><button class="link-btn" data-a="add-task">${ic('plus', 14)}Tarefa</button></div>
+          ${weekTasks.length ? `<ul class="rows">${weekTasks.slice(0, 7).map(w => w.row()).join('')}</ul>` : '<div class="empty">Nada com data para os próximos 7 dias.</div>'}
         </section>
       </div>
     </div>
@@ -1047,7 +1084,7 @@ function vPillar(id) {
           <button class="chk ${i.done ? 'on' : ''}" data-a="toggle-item" data-p="${p.id}" data-id="${i.id}" aria-label="Concluir">${ic('check', 13)}</button>
           <button class="row-main" data-a="edit-item" data-p="${p.id}" data-id="${i.id}">
             <div class="row-title">${esc(i.title)}</div>
-            <div class="row-meta">${dateChip(i.date, i.done, i.start)}${i.subs.length ? `<span class="chip mono">${sd}/${i.subs.length} subtarefas</span>` : ''}${i.note ? `<span class="chip">${ic('note', 12)}nota</span>` : ''}</div>
+            <div class="row-meta">${dateChip(i.date, i.done, i.start)}${i.done ? '' : prioChip(i.prio)}${i.subs.length ? `<span class="chip mono">${sd}/${i.subs.length} subtarefas</span>` : ''}${i.note ? `<span class="chip">${ic('note', 12)}nota</span>` : ''}</div>
           </button>
           <div class="row-tools">
             <button class="icon-btn sm" data-a="move-item" data-p="${p.id}" data-id="${i.id}" data-d="-1" aria-label="Subir" ${idx === 0 ? 'disabled' : ''}>${ic('up', 15)}</button>
@@ -1143,7 +1180,7 @@ function goalCard(g) {
 
 function tasksCard() {
   const T = today();
-  let ts = S.tasks.slice();
+  let ts = openWork();
   if (ui.taskView === 'open') ts = ts.filter(t => !t.done);
   if (ui.taskView === 'done') ts = ts.filter(t => t.done);
   const by = (a, b) => (a.due || '9999').localeCompare(b.due || '9999');
@@ -1157,9 +1194,9 @@ function tasksCard() {
   ].map(([l, a]) => [l, a.sort(by)]);
   const views = [['open', 'Abertas'], ['all', 'Todas'], ['done', 'Concluídas']];
   return `<section class="card">
-    <div class="sec-head" style="flex-wrap:wrap"><h2 class="sec">Todas as tarefas</h2><span class="sp"></span>
+    <div class="sec-head" style="flex-wrap:wrap"><h2 class="sec">Tarefas e marcos</h2><span class="sp"></span>
       <div class="pills sm">${views.map(([k, l]) => `<label><input type="radio" name="tv" data-c="task-view" value="${k}" ${ui.taskView === k ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></div>
-    ${groups.filter(g => g[1].length).map(([l, a]) => `<div class="group-label">${l}<span class="mono">${a.length}</span></div><ul class="rows">${a.map(t => taskRow(t)).join('')}</ul>`).join('') || '<div class="empty">Nenhuma tarefa aqui.</div>'}
+    ${groups.filter(g => g[1].length).map(([l, a]) => `<div class="group-label">${l}<span class="mono">${a.length}</span></div><ul class="rows">${a.map(w => w.row()).join('')}</ul>`).join('') || '<div class="empty">Nada aqui.</div>'}
     <input class="mt-in" style="margin-top:14px" data-enter="quick-task" placeholder="Tarefa rápida e Enter">
   </section>`;
 }
@@ -1260,7 +1297,7 @@ function vCalendar() {
     if (e.ref.t === 'event') {
       const ev = S.events.find(x => x.id === e.ref.id);
       return `<div class="day-item">
-        <div class="row-meta" style="margin:0 0 6px"><span class="chip kind k-${KIND[ev.type]}">${ev.type}</span>${ev.start ? `<span class="chip date">${period(ev.start, ev.date)}</span>` : ''}</div>
+        <div class="row-meta" style="margin:0 0 6px"><span class="chip kind k-${KIND[ev.type]}">${ev.type}</span>${prioChip(prioOf(ev, 'event'))}${ev.start ? `<span class="chip date">${period(ev.start, ev.date)}</span>` : ''}</div>
         <div style="display:flex;gap:8px;align-items:flex-start"><div class="t" style="flex:1">${esc(ev.title)}</div><button class="icon-btn sm" data-a="edit-event" data-id="${ev.id}" aria-label="Editar">${ic('edit', 15)}</button></div>
         ${ev.note ? `<div class="n">${esc(ev.note)}</div>` : ''}
         ${ev.docs.length ? `<div class="deliv"><div class="eyebrow" style="margin-bottom:4px">Entregar</div><ul class="rows">${ev.docs.map(d => `<li class="row ${d.done ? 'done' : ''}"><button class="chk ${d.done ? 'on' : ''}" data-a="toggle-deliv" data-ev="${ev.id}" data-id="${d.id}" aria-label="Marcar">${ic('check', 13)}</button><span class="row-main row-title">${esc(d.title)}</span></li>`).join('')}</ul>

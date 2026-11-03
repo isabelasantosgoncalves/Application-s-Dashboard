@@ -198,6 +198,15 @@ h2.sec {
 .hero h1 .n { font-variant-numeric: tabular-nums; }
 .hero h1 .what { color: var(--accent); }
 .hero h1 .when { color: var(--ink-3); font-weight: 500; }
+.hero-before { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin-top: 14px; }
+.hero-before .eyebrow { margin-right: 2px; }
+.before-item {
+  padding: 4px 10px; border-radius: 999px; font-size: 13px;
+  background: var(--ochre-soft); color: var(--ochre);
+}
+.before-item b { font-weight: 600; color: var(--ink); }
+.before-item.hi { background: var(--red-soft); color: var(--red); }
+.before-item:hover b { text-decoration: underline; text-underline-offset: 2px; }
 .hero-meta { margin-left: auto; text-align: right; color: var(--ink-2); font-size: 13px; }
 .hero-meta strong { display: block; font-weight: 600; font-size: 13px; color: var(--ink); }
 
@@ -346,6 +355,7 @@ span.chk.on, span.chk.on:hover { border-color: var(--accent); }
 .chip.date { font-family: var(--mono); font-size: 11px; }
 .chip.late { background: var(--red-soft); color: var(--red); }
 .chip.soon { background: var(--ochre-soft); color: var(--ochre); }
+.chip.prio-alta { background: var(--red-soft); color: var(--red); font-weight: 600; }
 .chip.kind { background: var(--ks, var(--sunk)); color: var(--k, var(--ink-2)); }
 .chip.ok { background: var(--accent-soft); color: var(--accent); }
 
