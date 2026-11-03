@@ -146,12 +146,23 @@ function segs(p, cls = '') {
   }).join('')}</div>`;
 }
 
+/* Optional start date: the main date stays the deadline (or the end of the period).
+   Returns an error message, or null after tidying v.start in place. */
+function checkPeriod(v, end) {
+  if (!v.start) return null;
+  if (!v[end]) return 'Coloque também a data final';
+  if (v.start > v[end]) return 'O início precisa vir antes do fim';
+  if (v.start === v[end]) v.start = '';
+  return null;
+}
+const period = (start, end) => start ? `${fmt(start)} → ${fmt(end)}` : fmt(end);
+
 /* Everything with a date, in one list */
 function agenda() {
   const out = [];
-  S.events.forEach(e => e.date && out.push({ date: e.date, title: e.title, kind: e.type, ref: { t: 'event', id: e.id } }));
-  S.tasks.forEach(t => t.due && out.push({ date: t.due, title: t.title, kind: 'Tarefa', done: t.done, ref: { t: 'task', id: t.id } }));
-  S.pillars.forEach(p => p.items.forEach(i => i.date && out.push({ date: i.date, title: i.title, sub: p.name, kind: 'Marco', done: i.done, ref: { t: 'item', pid: p.id, id: i.id } })));
+  S.events.forEach(e => e.date && out.push({ start: e.start, date: e.date, title: e.title, kind: e.type, ref: { t: 'event', id: e.id } }));
+  S.tasks.forEach(t => t.due && out.push({ start: t.start, date: t.due, title: t.title, kind: 'Tarefa', done: t.done, ref: { t: 'task', id: t.id } }));
+  S.pillars.forEach(p => p.items.forEach(i => i.date && out.push({ start: i.start, date: i.date, title: i.title, sub: p.name, kind: 'Marco', done: i.done, ref: { t: 'item', pid: p.id, id: i.id } })));
   if (S.profile.mentoria !== false) S.meetings.forEach(m => m.date && out.push({ date: m.date, title: m.title || 'Mentoria', kind: 'Mentoria', ref: { t: 'meet', id: m.id } }));
   const nameCol = S.colleges.columns[0];
   S.colleges.columns.filter(c => c.type === 'date').forEach(c => S.colleges.rows.forEach(r => {
@@ -431,18 +442,21 @@ function openForm({ title, fields, submit = 'Salvar', onSubmit, onDelete, delete
 /* ================= Forms per entity ================= */
 function taskForm(t = null, pre = {}) {
   const isNew = !t;
-  t = t || { title: '', due: '', pillarId: '', goalId: '', note: '', ...pre };
+  t = t || { title: '', start: '', due: '', pillarId: '', goalId: '', note: '', ...pre };
   const goalOpts = [{ v: '', l: 'Nenhum' }, ...S.goals.slice().sort((a, b) => b.month.localeCompare(a.month)).map(g => ({ v: g.id, l: `${g.title} (${MES[parse(g.month + '-01').getMonth()]})` }))];
   openForm({
     title: isNew ? 'Nova tarefa' : 'Editar tarefa',
     fields: [
       { key: 'title', label: 'Tarefa', value: t.title, required: true, ph: 'Ex.: gravar o vídeo do hackathon' },
-      [{ key: 'due', label: 'Prazo', type: 'date', value: t.due }, { key: 'pillarId', label: 'Pilar ou área', type: 'select', options: areaOpts(), value: t.pillarId }],
+      [{ key: 'start', label: 'Começar em (opcional)', type: 'date', value: t.start || '' }, { key: 'due', label: 'Prazo', type: 'date', value: t.due }],
+      { key: 'pillarId', label: 'Pilar ou área', type: 'select', options: areaOpts(), value: t.pillarId },
       { key: 'goalId', label: 'Faz parte do objetivo', type: 'select', options: goalOpts, value: t.goalId },
       { key: 'note', label: 'Notas', type: 'textarea', value: t.note, rows: 2 },
     ],
     submit: isNew ? 'Criar tarefa' : 'Salvar',
     onSubmit: v => {
+      const err = checkPeriod(v, 'due');
+      if (err) { toast(err); return false; }
       if (isNew) S.tasks.push({ id: uid(), done: false, ...v });
       else Object.assign(t, v);
     },
@@ -508,7 +522,7 @@ function itemForm(p, item = null) {
   if (p.type === 'activities') return activityForm(p, item);
   if (p.type === 'honors') return honorForm(p, item);
   const isNew = !item;
-  item = item || { title: '', date: '', note: '', subs: [] };
+  item = item || { title: '', start: '', date: '', note: '', subs: [] };
   let subs = item.subs.map(s => ({ ...s }));
   const subsHTML = () => subs.length
     ? `<ul class="rows">${subs.map(s => `<li class="row ${s.done ? 'done' : ''}" style="padding:7px 0">
@@ -520,12 +534,14 @@ function itemForm(p, item = null) {
     title: isNew ? `Novo ${nounFor(p)[0]}` : 'Editar marco',
     fields: [
       { key: 'title', label: 'Título', value: item.title, required: true },
-      { key: 'date', label: 'Data prevista', type: 'date', value: item.date },
+      [{ key: 'start', label: 'Início (opcional)', type: 'date', value: item.start || '' }, { key: 'date', label: 'Data prevista', type: 'date', value: item.date }],
       { key: 'note', label: 'Notas', type: 'textarea', value: item.note, rows: 3 },
       { type: 'html', html: `<div class="field"><span>Subtarefas</span><div id="subs">${subsHTML()}</div>
         <div class="subs-add"><input id="sub-in" placeholder="Nova subtarefa" style="border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:#fff"><button type="button" class="btn ghost sm" id="sub-add">${ic('plus', 15)}Adicionar</button></div></div>` },
     ],
     onSubmit: v => {
+      const err = checkPeriod(v, 'date');
+      if (err) { toast(err); return false; }
       if (isNew) p.items.push({ id: uid(), done: false, ...v, subs });
       else Object.assign(item, v, { subs });
     },
@@ -588,19 +604,22 @@ function honorForm(p, h = null) {
 
 function eventForm(ev = null, pre = {}) {
   const isNew = !ev;
-  ev = ev || { title: '', date: ui.selDay, type: 'Prazo', note: '', docs: [], ...pre };
+  ev = ev || { title: '', start: '', date: ui.selDay, type: 'Prazo', note: '', docs: [], ...pre };
   openForm({
     title: isNew ? 'Novo evento ou prazo' : 'Editar evento',
     fields: [
       { key: 'title', label: 'Título', value: ev.title, required: true, ph: 'Ex.: Inscrição no hackathon' },
-      [{ key: 'date', label: 'Data', type: 'date', value: ev.date, required: true }, { key: 'type', label: 'Tipo', type: 'select', value: ev.type, options: EVENT_TYPES.map(t => ({ v: t, l: t })) }],
+      { key: 'type', label: 'Tipo', type: 'select', value: ev.type, options: EVENT_TYPES.map(t => ({ v: t, l: t })) },
+      [{ key: 'start', label: 'Início (opcional)', type: 'date', value: ev.start || '' }, { key: 'date', label: 'Data ou fim', type: 'date', value: ev.date, required: true }],
       { key: 'docs', label: 'O que preciso entregar (um por linha)', type: 'textarea', value: ev.docs.map(d => d.title).join('\n'), rows: 3, hint: 'Cada linha vira um item marcável. Depois dá pra transformar em tarefas.' },
       { key: 'note', label: 'Notas', type: 'textarea', value: ev.note, rows: 2 },
     ],
     onSubmit: v => {
+      const err = checkPeriod(v, 'date');
+      if (err) { toast(err); return false; }
       const lines = v.docs.split('\n').map(s => s.trim()).filter(Boolean);
       const docs = lines.map(l => ev.docs.find(d => d.title === l) || { id: uid(), title: l, done: false });
-      const data = { title: v.title, date: v.date, type: v.type, note: v.note, docs };
+      const data = { title: v.title, start: v.start, date: v.date, type: v.type, note: v.note, docs };
       if (isNew) S.events.push({ id: uid(), ...data }); else Object.assign(ev, data);
       ui.selDay = v.date; ui.calMonth = v.date.slice(0, 7);
     },
@@ -760,11 +779,11 @@ function renderSide() {
 function head({ eyebrow, title, desc, actions = '' }) {
   return `<header class="page-head"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1>${desc ? `<p>${desc}</p>` : ''}</div>${actions ? `<div class="actions">${actions}</div>` : ''}</header>`;
 }
-const dateChip = (s, done) => {
+const dateChip = (s, done, start) => {
   if (!s) return '';
   const n = diffDays(today(), s);
   const cls = done ? '' : n < 0 ? 'late' : n <= 3 ? 'soon' : '';
-  return `<span class="chip date ${cls}">${fmt(s)}${!done && n < 0 ? ' · atrasada' : ''}</span>`;
+  return `<span class="chip date ${cls}">${period(start, s)}${!done && n < 0 ? ' · atrasada' : ''}</span>`;
 };
 
 function taskRow(t, { showGoal = true, showPillar = true } = {}) {
@@ -773,7 +792,7 @@ function taskRow(t, { showGoal = true, showPillar = true } = {}) {
     <button class="chk round ${t.done ? 'on' : ''}" data-a="toggle-task" data-id="${t.id}" aria-label="${t.done ? 'Reabrir' : 'Concluir'} tarefa">${ic('check', 13)}</button>
     <button class="row-main" data-a="edit-task" data-id="${t.id}">
       <div class="row-title">${esc(t.title)}</div>
-      <div class="row-meta">${dateChip(t.due, t.done)}${t.meetId && S.profile.mentoria !== false ? '<span class="chip k-ochre kind">Mentoria</span>' : ''}${showPillar && p ? `<span class="chip">${esc(p)}</span>` : ''}${showGoal && g ? `<span class="chip ok">${ic('target', 12)}${esc(g.title)}</span>` : ''}</div>
+      <div class="row-meta">${dateChip(t.due, t.done, t.start)}${t.meetId && S.profile.mentoria !== false ? '<span class="chip k-ochre kind">Mentoria</span>' : ''}${showPillar && p ? `<span class="chip">${esc(p)}</span>` : ''}${showGoal && g ? `<span class="chip ok">${ic('target', 12)}${esc(g.title)}</span>` : ''}</div>
     </button>
   </li>`;
 }
@@ -982,7 +1001,7 @@ function vPillar(id) {
           <button class="chk ${i.done ? 'on' : ''}" data-a="toggle-item" data-p="${p.id}" data-id="${i.id}" aria-label="Concluir">${ic('check', 13)}</button>
           <button class="row-main" data-a="edit-item" data-p="${p.id}" data-id="${i.id}">
             <div class="row-title">${esc(i.title)}</div>
-            <div class="row-meta">${dateChip(i.date, i.done)}${i.subs.length ? `<span class="chip mono">${sd}/${i.subs.length} subtarefas</span>` : ''}${i.note ? `<span class="chip">${ic('note', 12)}nota</span>` : ''}</div>
+            <div class="row-meta">${dateChip(i.date, i.done, i.start)}${i.subs.length ? `<span class="chip mono">${sd}/${i.subs.length} subtarefas</span>` : ''}${i.note ? `<span class="chip">${ic('note', 12)}nota</span>` : ''}</div>
           </button>
           <div class="row-tools">
             <button class="icon-btn sm" data-a="move-item" data-p="${p.id}" data-id="${i.id}" data-d="-1" aria-label="Subir" ${idx === 0 ? 'disabled' : ''}>${ic('up', 15)}</button>
@@ -1171,16 +1190,22 @@ function vCalendar() {
   const startOffset = (first.getDay() + 6) % 7;
   const gridStart = addDays(M + '-01', -startOffset);
   const all = agenda();
+  // A period shows on every day it covers; pos says which part of the bar this day is
   const byDay = {};
-  all.forEach(e => (byDay[e.date] = byDay[e.date] || []).push(e));
+  const put = (d, e, pos) => (byDay[d] = byDay[d] || []).push({ ...e, pos });
+  all.forEach(e => {
+    if (!e.start) return put(e.date, e, '');
+    for (let d = e.start, i = 0; d <= e.date && i < 400; d = addDays(d, 1), i++) put(d, e, d === e.start ? 'p-start' : d === e.date ? 'p-end' : 'p-mid');
+  });
+  Object.values(byDay).forEach(es => es.sort((a, b) => !!b.pos - !!a.pos || (a.start || a.date).localeCompare(b.start || b.date)));
   const cells = [];
   const weeks = Math.ceil((startOffset + new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()) / 7);
   for (let i = 0; i < weeks * 7; i++) {
     const d = addDays(gridStart, i), es = byDay[d] || [];
     cells.push(`<button class="cal-day ${d.slice(0, 7) !== M ? 'out' : ''} ${d === T ? 'is-today' : ''} ${d === ui.selDay ? 'sel' : ''}" data-a="sel-day" data-date="${d}" aria-label="${fmtY(d)}${es.length ? `, ${es.length} itens` : ''}">
       <span class="dn">${parse(d).getDate()}</span>
-      ${es.slice(0, 3).map(e => `<span class="ev k-${KIND[e.kind]} ${e.done ? 'done' : ''}">${esc(e.title)}</span>`).join('')}
-      ${es.length > 3 ? `<span class="ev-more">+${es.length - 3}</span>` : ''}
+      ${es.slice(0, 4).map(e => `<span class="ev k-${KIND[e.kind]} ${e.done ? 'done' : ''} ${e.pos}" title="${esc(e.title)}${e.start ? ` · ${period(e.start, e.date)}` : ''}">${e.pos === 'p-mid' && i % 7 ? '&nbsp;' : esc(e.title)}</span>`).join('')}
+      ${es.length > 4 ? `<span class="ev-more">+${es.length - 4}</span>` : ''}
       <span class="cal-dots">${es.slice(0, 4).map(e => `<i class="k-${KIND[e.kind]}"></i>`).join('')}</span>
     </button>`);
   }
@@ -1189,7 +1214,7 @@ function vCalendar() {
     if (e.ref.t === 'event') {
       const ev = S.events.find(x => x.id === e.ref.id);
       return `<div class="day-item">
-        <div class="row-meta" style="margin:0 0 6px"><span class="chip kind k-${KIND[ev.type]}">${ev.type}</span></div>
+        <div class="row-meta" style="margin:0 0 6px"><span class="chip kind k-${KIND[ev.type]}">${ev.type}</span>${ev.start ? `<span class="chip date">${period(ev.start, ev.date)}</span>` : ''}</div>
         <div style="display:flex;gap:8px;align-items:flex-start"><div class="t" style="flex:1">${esc(ev.title)}</div><button class="icon-btn sm" data-a="edit-event" data-id="${ev.id}" aria-label="Editar">${ic('edit', 15)}</button></div>
         ${ev.note ? `<div class="n">${esc(ev.note)}</div>` : ''}
         ${ev.docs.length ? `<div class="deliv"><div class="eyebrow" style="margin-bottom:4px">Entregar</div><ul class="rows">${ev.docs.map(d => `<li class="row ${d.done ? 'done' : ''}"><button class="chk ${d.done ? 'on' : ''}" data-a="toggle-deliv" data-ev="${ev.id}" data-id="${d.id}" aria-label="Marcar">${ic('check', 13)}</button><span class="row-main row-title">${esc(d.title)}</span></li>`).join('')}</ul>
@@ -1197,7 +1222,7 @@ function vCalendar() {
       </div>`;
     }
     const act = e.ref.t === 'task' ? `data-a="edit-task" data-id="${e.ref.id}"` : `data-a="goto-ref" data-ref='${esc(JSON.stringify(e.ref))}'`;
-    return `<div class="day-item"><div class="row-meta" style="margin:0 0 6px"><span class="chip kind k-${KIND[e.kind]}">${e.kind}</span>${e.sub ? `<span class="chip">${esc(e.sub)}</span>` : ''}</div>
+    return `<div class="day-item"><div class="row-meta" style="margin:0 0 6px"><span class="chip kind k-${KIND[e.kind]}">${e.kind}</span>${e.start ? `<span class="chip date">${period(e.start, e.date)}</span>` : ''}${e.sub ? `<span class="chip">${esc(e.sub)}</span>` : ''}</div>
       <button class="row-main" ${act}><div class="t ${e.done ? 'muted' : ''}" style="${e.done ? 'text-decoration:line-through' : ''}">${esc(e.title)}</div></button></div>`;
   };
   return `<div class="page">

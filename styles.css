@@ -475,6 +475,10 @@ span.chk.on, span.chk.on:hover { border-color: var(--accent); }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .ev.done { opacity: .55; text-decoration: line-through; }
+/* A period runs across days as one bar, with square inner ends */
+.ev.p-start { border-radius: 5px 0 0 5px; margin-right: -8px; }
+.ev.p-mid { border-radius: 0; margin: 0 -8px; }
+.ev.p-end { border-radius: 0 5px 5px 0; margin-left: -8px; }
 .ev-more { font-size: 11px; color: var(--ink-3); padding-left: 4px; }
 .cal-dots { display: none; gap: 3px; flex-wrap: wrap; }
 .cal-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--k); }
