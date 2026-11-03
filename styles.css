@@ -576,10 +576,28 @@ span.chk.on, span.chk.on:hover { border-color: var(--accent); }
   border: 0; background: transparent; outline: none;
   font-size: 28px; font-weight: 600; letter-spacing: -.035em; padding: 0;
 }
-.note-editor textarea {
-  flex: 1; min-height: 420px; border: 0; background: transparent; outline: none; resize: vertical;
-  font-size: 15px; line-height: 1.65; padding: 0;
+.note-ed {
+  flex: 1; min-height: 420px; outline: none;
+  font-size: 15px; line-height: 1.65; overflow-wrap: anywhere;
 }
+.note-ed:empty::before { content: attr(data-ph); color: var(--ink-3); pointer-events: none; }
+.note-ed h2 { font-size: 21px; font-weight: 600; letter-spacing: -.02em; line-height: 1.3; margin: 14px 0 4px; }
+.note-ed h3 { font-size: 17px; font-weight: 600; line-height: 1.35; margin: 12px 0 2px; }
+.note-ed ul, .note-ed ol { margin: 4px 0; padding-left: 24px; }
+.note-ed li { padding-left: 2px; }
+.note-ed p { margin: 0; }
+.fmt-bar { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
+.fmt-bar button {
+  min-width: 32px; height: 32px; padding: 0 7px; border-radius: 8px;
+  display: inline-grid; place-items: center;
+  font-size: 14px; color: var(--ink-2);
+}
+.fmt-bar button:hover { background: var(--sunk); color: var(--ink); }
+.fmt-bar button.on { background: var(--accent-soft); color: var(--accent); }
+.fmt-bar button[data-fmt^="h"] { font-family: var(--mono); font-size: 12px; font-weight: 600; }
+.fmt-bar .tx { font-size: 14px; }
+.fmt-bar .tx sub { font-size: 9px; }
+.fmt-sep { width: 1px; height: 18px; background: var(--line); margin: 0 6px; }
 .note-back { display: none !important; }
 .note-bar { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 

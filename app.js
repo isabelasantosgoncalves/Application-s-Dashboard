@@ -58,6 +58,8 @@ const I = {
   dl: '<path d="M12 4v11M7 10l5 5 5-5M4 20h16"/>',
   ul: '<path d="M12 20V9M7 14l5-5 5 5M4 4h16"/>',
   refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+  bullets: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor"/>',
+  numbers: '<path d="M10 6h10M10 12h10M10 18h10"/><path d="M4 4.5 5.3 4v4.5M3.8 14.2c.2-.8 2.4-1 2.4.3 0 .9-2.4 1.8-2.4 3h2.5"/>',
 };
 const ic = (n, s = 18) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n]}</svg>`;
 
@@ -183,6 +185,50 @@ const areaHref = id => id === COLLEGE_TAG ? '#/colleges' : id === MENTOR_TAG ? '
 const areaOpts = (blank = 'Nenhum') => [...pillarOpts(blank), { v: COLLEGE_TAG, l: 'College list' }];
 const noteTag = n => areaName(n.pillarId);
 const questionsNote = () => S.notes.find(n => n.questions);
+
+/* Notes are rich text: n.html is what the editor shows, n.body a plain-text copy
+   used for counts and tasks. Only simple formatting tags survive, with no attributes. */
+const NOTE_TAGS = ['B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'H2', 'H3', 'UL', 'OL', 'LI', 'DIV', 'P', 'BR'];
+function cleanHTML(html) {
+  // A <template> parses without loading images or running handlers
+  const t = document.createElement('template');
+  t.innerHTML = html;
+  const walk = el => [...el.children].forEach(c => {
+    walk(c);
+    if (['SCRIPT', 'STYLE'].includes(c.tagName)) c.remove();
+    else if (!NOTE_TAGS.includes(c.tagName)) c.replaceWith(...c.childNodes);
+    else [...c.attributes].forEach(a => c.removeAttribute(a.name));
+  });
+  walk(t.content);
+  const box = document.createElement('div');
+  box.append(t.content);
+  return box.innerHTML;
+}
+// Old plain notes: "- " lines become a list, the rest one line each
+function textToHTML(text) {
+  let out = '', list = false;
+  (text || '').split('\n').forEach(l => {
+    const m = l.match(/^\s*[-*•]\s+(.*)$/);
+    if (m && !list) { out += '<ul>'; list = true; }
+    if (!m && list) { out += '</ul>'; list = false; }
+    out += m ? `<li>${esc(m[1])}</li>` : `<div>${l.trim() ? esc(l) : '<br>'}</div>`;
+  });
+  return out + (list ? '</ul>' : '');
+}
+const noteHTML = n => n.html ?? textToHTML(n.body);
+// Plain text from the editor's HTML, one line per block (innerText loses them while hidden)
+function noteText(html) {
+  const t = document.createElement('template');
+  t.innerHTML = html;
+  t.content.querySelectorAll('br').forEach(b => b.replaceWith('\n'));
+  t.content.querySelectorAll('li, div, p, h2, h3').forEach(b => b.append('\n'));
+  return t.content.textContent.replace(/\n{3,}/g, '\n\n').trim();
+}
+function noteAppendItem(n, text) {
+  const h = noteHTML(n).replace(/(<div><br><\/div>)+$/, '');
+  n.html = h.endsWith('</ul>') ? h.slice(0, -5) + `<li>${esc(text)}</li></ul>` : h + `<ul><li>${esc(text)}</li></ul>`;
+  n.body = (n.body.trim() ? n.body.replace(/\s+$/, '') + '\n' : '') + text;
+}
 const meetNotes = id => S.notes.filter(n => n.meetId === id).sort((a, b) => b.updated - a.updated);
 function ensureQuestionsNote() {
   let n = questionsNote();
@@ -1445,7 +1491,21 @@ function vNotes() {
         </div>
         <input class="t-in" data-i="note-title" value="${esc(n.title)}" placeholder="Título" aria-label="Título da nota">
         ${nm ? '<div class="note-hint">Para mandar um próximo passo para o Planejamento, coloque o cursor na linha (ou selecione várias) e clique em Virar tarefa.</div>' : ''}
-        <textarea data-i="note-body" placeholder="Escreva aqui…" aria-label="Texto da nota">${esc(n.body)}</textarea>
+        <div class="fmt-bar" role="toolbar" aria-label="Formatação">
+          <button type="button" data-fmt="bold" title="Negrito (Ctrl+B)" aria-label="Negrito"><b>B</b></button>
+          <button type="button" data-fmt="italic" title="Itálico (Ctrl+I)" aria-label="Itálico"><i>I</i></button>
+          <button type="button" data-fmt="underline" title="Sublinhado (Ctrl+U)" aria-label="Sublinhado"><u>U</u></button>
+          <button type="button" data-fmt="strikeThrough" title="Tachado" aria-label="Tachado"><s>S</s></button>
+          <i class="fmt-sep"></i>
+          <button type="button" data-fmt="h2" title="Título" aria-label="Título">T1</button>
+          <button type="button" data-fmt="h3" title="Subtítulo" aria-label="Subtítulo">T2</button>
+          <i class="fmt-sep"></i>
+          <button type="button" data-fmt="insertUnorderedList" title="Lista com marcadores" aria-label="Lista com marcadores">${ic('bullets', 17)}</button>
+          <button type="button" data-fmt="insertOrderedList" title="Lista numerada" aria-label="Lista numerada">${ic('numbers', 17)}</button>
+          <i class="fmt-sep"></i>
+          <button type="button" data-fmt="removeFormat" title="Limpar formatação" aria-label="Limpar formatação"><span class="tx">T<sub>x</sub></span></button>
+        </div>
+        <div class="note-ed" contenteditable="true" data-i="note-body" data-ph="Escreva aqui…" role="textbox" aria-multiline="true" aria-label="Texto da nota">${cleanHTML(noteHTML(n))}</div>
       </section>` : '<section class="card note-editor" style="min-height:0"><div class="empty">Crie uma nota para começar.</div></section>'}
     </div>
   </div>`;
@@ -1650,12 +1710,13 @@ const A = {
   'export-xlsx': () => exportXlsx(),
   'export-pdf': () => exportPdf(),
   'note-task': () => {
-    const n = S.notes.find(n => n.id === ui.noteId), ta = $('[data-i="note-body"]');
-    if (!n || !ta) return;
-    let txt = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+    const n = S.notes.find(n => n.id === ui.noteId), ed = $('.note-ed'), sel = getSelection();
+    if (!n || !ed || !sel.rangeCount || !ed.contains(sel.anchorNode)) return toast('Coloque o cursor numa linha com texto');
+    let txt = sel.toString();
     if (!txt.trim()) {
-      const a = ta.value.lastIndexOf('\n', ta.selectionStart - 1) + 1, b = ta.value.indexOf('\n', ta.selectionStart);
-      txt = ta.value.slice(a, b < 0 ? undefined : b);
+      const node = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
+      const line = node.closest('li, div, p, h2, h3');
+      txt = line && line !== ed && ed.contains(line) ? line.innerText : sel.anchorNode.textContent;
     }
     const lines = txt.split('\n').map(l => l.replace(/^[-*•\s]+/, '').trim()).filter(Boolean);
     if (!lines.length) return toast('Coloque o cursor numa linha com texto');
@@ -1698,7 +1759,7 @@ const ENTER = {
   'quick-task': (d, el) => { S.tasks.push({ id: uid(), title: el.value.trim(), due: '', done: false, goalId: '', pillarId: '', meetId: '', note: '' }); },
   'quick-question': (d, el) => {
     const n = ensureQuestionsNote();
-    n.body = (n.body.trim() ? n.body.replace(/\s+$/, '') + '\n' : '') + '- ' + el.value.trim();
+    noteAppendItem(n, el.value.trim());
     n.updated = Date.now();
     toast('Pergunta anotada');
   },
@@ -1725,7 +1786,9 @@ const INPUT = {
     clearTimeout(noteSaveT); noteSaveT = setTimeout(save, 300);
   },
   'note-body': el => {
-    const n = S.notes.find(n => n.id === ui.noteId); n.body = el.value; n.updated = Date.now();
+    const n = S.notes.find(n => n.id === ui.noteId);
+    n.body = noteText(el.innerHTML); n.html = n.body ? el.innerHTML : ''; n.updated = Date.now();
+    fmtState();
     clearTimeout(noteSaveT); noteSaveT = setTimeout(save, 300);
   },
 };
@@ -1740,6 +1803,36 @@ document.addEventListener('click', e => {
   fn(el.dataset, el, e);
 });
 document.addEventListener('change', e => { const el = e.target.closest('[data-c]'); if (el && CHANGE[el.dataset.c]) CHANGE[el.dataset.c](el); });
+function fmtState() {
+  document.querySelectorAll('[data-fmt]').forEach(b => {
+    const f = b.dataset.fmt;
+    let on = false;
+    try { on = f.startsWith('h') ? document.queryCommandValue('formatBlock').toLowerCase() === f : f !== 'removeFormat' && document.queryCommandState(f); } catch {}
+    b.classList.toggle('on', on);
+  });
+}
+document.addEventListener('mousedown', e => {
+  const b = e.target.closest('[data-fmt]');
+  if (!b) return;
+  e.preventDefault();
+  const ed = $('.note-ed');
+  if (!ed) return;
+  // Formatting only applies while the editor has focus; keep the current selection
+  const sel = getSelection(), r = sel.rangeCount && ed.contains(sel.anchorNode) ? sel.getRangeAt(0) : null;
+  if (document.activeElement !== ed) { ed.focus(); if (r) { sel.removeAllRanges(); sel.addRange(r); } }
+  const f = b.dataset.fmt;
+  if (f.startsWith('h')) document.execCommand('formatBlock', false, document.queryCommandValue('formatBlock').toLowerCase() === f ? 'div' : f);
+  else document.execCommand(f);
+  INPUT['note-body'](ed);
+});
+document.addEventListener('selectionchange', () => { if ($('.fmt-bar')) fmtState(); });
+// Pasting keeps only the text, so styles from other sites don't come along
+document.addEventListener('paste', e => {
+  if (!e.target.closest?.('.note-ed')) return;
+  e.preventDefault();
+  document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+});
+document.execCommand('defaultParagraphSeparator', false, 'div');
 document.addEventListener('input', e => { const el = e.target.closest('[data-i]'); if (el && INPUT[el.dataset.i]) INPUT[el.dataset.i](el); });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
