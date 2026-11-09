@@ -94,7 +94,7 @@ function save() {
   catch { toast('Não foi possível salvar neste navegador'); }
 }
 const ui = {
-  calMonth: today().slice(0, 7), selDay: today(),
+  calMonth: today().slice(0, 7), selDay: today(), openSubs: new Set(),
   goalMonth: today().slice(0, 7),
   taskView: 'open',
   noteId: null, noteOpen: false,
@@ -124,12 +124,20 @@ function sheetFrac(p, a) {
   return Math.min(n - sheetMissing(p, a), n - 1) / n;
 }
 
+/* A milestone counts in full once checked; before that, its subtasks move it forward
+   (never all the way, since checking the milestone is the student's call). */
+function itemFrac(i) {
+  if (i.done) return 1;
+  const subs = i.subs || [];
+  return subs.length ? subs.filter(s => s.done).length / subs.length * .9 : 0;
+}
+
 /* parts: how full each block is, fullest first. Checklist items are all or nothing;
    sheets count partly, so filling in fields moves the pillar forward. */
 function progress(p) {
   const done = p.items.filter(i => i.done).length;
   const total = p.target ? Number(p.target) : p.items.length;
-  const parts = p.type === 'checklist' ? p.items.map(i => +!!i.done) : p.items.map(a => sheetFrac(p, a));
+  const parts = p.type === 'checklist' ? p.items.map(itemFrac) : p.items.map(a => sheetFrac(p, a));
   parts.sort((a, b) => b - a);
   const sum = parts.slice(0, total).reduce((a, f) => a + f, 0);
   return { done, total, parts, pct: total ? Math.min(1, sum / total) : 0 };
@@ -328,6 +336,8 @@ function seed({ name, cycle, test, mode, mentor = true }) {
 
   const sat = P({
     name: 'SAT', desc: PILLAR_DESC.sat,
+    track: ex ? { label: 'Nota do simulado', start: '', goal: '1450' } : null,
+    scores: ex ? [{ id: uid(), date: d(-18), value: 1180, note: 'Diagnóstico' }] : [],
     items: [
       it('Diagnóstico inicial', ex ? { done: true, date: d(-18), note: 'Simulado oficial do Bluebook para medir o ponto de partida.' } : {}),
       it('Fase 1 — Fundamentos', ex ? { date: d(30), subs: [sub('Math: álgebra e funções', true), sub('Reading: vocabulário em contexto'), sub('Writing: regras de pontuação')] } : {}),
@@ -580,14 +590,21 @@ function pillarForm(p = null) {
         options: [{ v: 'checklist', l: 'Checklist de marcos' }, { v: 'activities', l: 'Fichas de atividade (Common App)' }, { v: 'honors', l: 'Fichas de honors (Common App)' }],
         hint: locked ? 'O formato só pode mudar com o pilar vazio, porque marcos e fichas guardam informações diferentes.' : 'Checklist: marcos com data e subtarefas, como as fases do SAT. Fichas: os campos que a Common App pede.',
       },
-      { key: 'target', label: 'Meta: quantos itens fecham o pilar', type: 'number', value: p.target ?? '', hint: 'Ex.: 8 extracurriculares. Em branco, o pilar fecha quando todos os itens da lista estiverem concluídos.' },
+      { key: 'target', label: 'Meta: quantos itens fecham o pilar', type: 'number', value: p.target ?? '', hint: 'Ex.: 8 extracurriculares. Em branco, o pilar fecha quando todos os itens da lista estiverem concluídos. Nas fichas, as vagas da Common App (10 atividades, 5 honors) continuam à vista.' },
+      { type: 'html', html: `<label class="check-line"><input type="checkbox" name="track" ${p.track ? 'checked' : ''}><span><b>Acompanhar uma nota ou número</b><small>Para registrar cada resultado, como as notas dos simulados, e ver a evolução até a meta.</small></span></label><div id="track-box" ${p.track ? '' : 'hidden'}>` },
+      { key: 'trackLabel', label: 'O que você vai acompanhar', value: p.track?.label || '', ph: 'Ex.: Nota do simulado' },
+      [{ key: 'trackStart', label: 'Valor inicial (opcional)', type: 'number', value: p.track?.start ?? '', ph: 'Ex.: 820' }, { key: 'trackGoal', label: 'Meta (opcional)', type: 'number', value: p.track?.goal ?? '', ph: 'Ex.: 1450' }],
+      { type: 'html', html: '</div>' },
     ],
     submit: isNew ? 'Criar pilar' : 'Salvar',
-    onSubmit: v => {
+    onSubmit: (v, form) => {
       const target = v.target ? Math.max(1, Math.round(+v.target)) : null;
-      if (isNew) { const np = { id: uid(), type: v.type || 'checklist', name: v.name, desc: v.desc, target, items: [] }; S.pillars.push(np); setTimeout(() => go(`pillar/${np.id}`)); }
-      else { Object.assign(p, { name: v.name, desc: v.desc, target }); if (!locked && v.type) p.type = v.type; }
+      // Turning tracking off keeps the recorded scores, in case it is turned back on
+      const track = form.querySelector('[name=track]').checked ? { label: v.trackLabel || 'Nota', start: v.trackStart, goal: v.trackGoal } : null;
+      if (isNew) { const np = { id: uid(), type: v.type || 'checklist', name: v.name, desc: v.desc, target, track, scores: [], items: [] }; S.pillars.push(np); setTimeout(() => go(`pillar/${np.id}`)); }
+      else { Object.assign(p, { name: v.name, desc: v.desc, target, track }); p.scores = p.scores || []; if (!locked && v.type) p.type = v.type; }
     },
+    onMount: form => { form.querySelector('[name=track]').addEventListener('change', e => { $('#track-box', form).hidden = !e.target.checked; }); },
     onDelete: isNew ? null : () => {
       S.pillars = S.pillars.filter(x => x.id !== p.id);
       [...S.tasks, ...S.goals, ...S.docs, ...S.notes].forEach(x => { if (x.pillarId === p.id) x.pillarId = ''; });
@@ -598,18 +615,40 @@ function pillarForm(p = null) {
   });
 }
 
+/* Subtasks inside a form: kept in a local copy until the form is saved */
+function subsEditor(list, empty) {
+  let subs = (list || []).map(s => ({ ...s }));
+  const html = () => subs.length
+    ? `<ul class="rows">${subs.map(s => `<li class="row ${s.done ? 'done' : ''}" style="padding:7px 0">
+        <button type="button" class="chk ${s.done ? 'on' : ''}" data-sub-t="${s.id}" aria-label="Concluir">${ic('check', 13)}</button>
+        <span class="row-main row-title">${esc(s.title)}</span>
+        <button type="button" class="icon-btn sm" data-sub-x="${s.id}" aria-label="Remover">${ic('x', 14)}</button></li>`).join('')}</ul>`
+    : `<p class="muted" style="margin:0;font-size:13px">${empty}</p>`;
+  return {
+    get: () => subs,
+    field: label => ({ type: 'html', html: `<div class="field"><span>${label}</span><div id="subs">${html()}</div>
+      <div class="subs-add"><input id="sub-in" placeholder="Nova subtarefa" style="border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:#fff"><button type="button" class="btn ghost sm" id="sub-add">${ic('plus', 15)}Adicionar</button></div></div>` }),
+    mount: form => {
+      const box = $('#subs', form), inp = $('#sub-in', form);
+      const add = () => { const t = inp.value.trim(); if (!t) return; subs.push({ id: uid(), title: t, done: false }); inp.value = ''; box.innerHTML = html(); inp.focus(); };
+      $('#sub-add', form).onclick = add;
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+      box.addEventListener('click', e => {
+        const t = e.target.closest('[data-sub-t]'), x = e.target.closest('[data-sub-x]');
+        if (t) { const s = subs.find(s => s.id === t.dataset.subT); s.done = !s.done; }
+        if (x) subs = subs.filter(s => s.id !== x.dataset.subX);
+        if (t || x) box.innerHTML = html();
+      });
+    },
+  };
+}
+
 function itemForm(p, item = null) {
   if (p.type === 'activities') return activityForm(p, item);
   if (p.type === 'honors') return honorForm(p, item);
   const isNew = !item;
   item = item || { title: '', start: '', date: '', note: '', subs: [] };
-  let subs = item.subs.map(s => ({ ...s }));
-  const subsHTML = () => subs.length
-    ? `<ul class="rows">${subs.map(s => `<li class="row ${s.done ? 'done' : ''}" style="padding:7px 0">
-        <button type="button" class="chk ${s.done ? 'on' : ''}" data-sub-t="${s.id}" aria-label="Concluir">${ic('check', 13)}</button>
-        <span class="row-main row-title">${esc(s.title)}</span>
-        <button type="button" class="icon-btn sm" data-sub-x="${s.id}" aria-label="Remover">${ic('x', 14)}</button></li>`).join('')}</ul>`
-    : '<p class="muted" style="margin:0;font-size:13px">Quebre este marco em partes menores.</p>';
+  const se = subsEditor(item.subs, 'Quebre este marco em partes menores, como os conteúdos de uma fase.');
   openForm({
     title: isNew ? `Novo ${nounFor(p)[0]}` : 'Editar marco',
     fields: [
@@ -617,34 +656,23 @@ function itemForm(p, item = null) {
       [{ key: 'start', label: 'Início (opcional)', type: 'date', value: item.start || '' }, { key: 'date', label: 'Data prevista', type: 'date', value: item.date }],
       { key: 'prio', label: 'Prioridade', type: 'radio', value: prioOf(item), options: PRIO_OPTS },
       { key: 'note', label: 'Notas', type: 'textarea', value: item.note, rows: 3 },
-      { type: 'html', html: `<div class="field"><span>Subtarefas</span><div id="subs">${subsHTML()}</div>
-        <div class="subs-add"><input id="sub-in" placeholder="Nova subtarefa" style="border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:#fff"><button type="button" class="btn ghost sm" id="sub-add">${ic('plus', 15)}Adicionar</button></div></div>` },
+      se.field('Subtarefas'),
     ],
     onSubmit: v => {
       const err = checkPeriod(v, 'date');
       if (err) { toast(err); return false; }
-      if (isNew) p.items.push({ id: uid(), done: false, ...v, subs });
-      else Object.assign(item, v, { subs });
+      if (isNew) p.items.push({ id: uid(), done: false, ...v, subs: se.get() });
+      else Object.assign(item, v, { subs: se.get() });
     },
     onDelete: isNew ? null : () => { p.items = p.items.filter(x => x.id !== item.id); },
-    onMount: form => {
-      const box = $('#subs', form), inp = $('#sub-in', form);
-      const add = () => { const t = inp.value.trim(); if (!t) return; subs.push({ id: uid(), title: t, done: false }); inp.value = ''; box.innerHTML = subsHTML(); inp.focus(); };
-      $('#sub-add', form).onclick = add;
-      inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
-      box.addEventListener('click', e => {
-        const t = e.target.closest('[data-sub-t]'), x = e.target.closest('[data-sub-x]');
-        if (t) { const s = subs.find(s => s.id === t.dataset.subT); s.done = !s.done; }
-        if (x) subs = subs.filter(s => s.id !== x.dataset.subX);
-        if (t || x) box.innerHTML = subsHTML();
-      });
-    },
+    onMount: se.mount,
   });
 }
 
 function activityForm(p, a = null) {
   const isNew = !a;
   a = a || { atype: '', title: '', org: '', note: '', grades: [], timing: '', hours: '', weeks: '', done: false };
+  const se = subsEditor(a.subs, 'O que falta para esta atividade andar. Ex.: gravar o vídeo, publicar a versão 2.');
   openForm({
     title: isNew ? 'Nova atividade' : 'Ficha da atividade',
     wide: true,
@@ -656,13 +684,16 @@ function activityForm(p, a = null) {
       { key: 'grades', label: 'Anos de participação', type: 'multi', value: a.grades, options: GRADES, hint: GRADE_HINT },
       { key: 'timing', label: 'Quando', type: 'radio', value: a.timing, options: TIMING.map(t => ({ v: t, l: t })) },
       [{ key: 'hours', label: 'Horas por semana', type: 'number', value: a.hours }, { key: 'weeks', label: 'Semanas por ano', type: 'number', value: a.weeks }],
+      se.field('Andamento (opcional)'),
     ],
     onSubmit: v => {
       if (isNew) p.items.push(a = { id: uid(), ...v });
       else Object.assign(a, v);
+      a.subs = se.get();
       a.done = sheetDone(p, a);
     },
     onDelete: isNew ? null : () => { p.items = p.items.filter(x => x.id !== a.id); },
+    onMount: se.mount,
     confirmText: 'Excluir esta atividade?',
   });
 }
@@ -670,15 +701,18 @@ function activityForm(p, a = null) {
 function honorForm(p, h = null) {
   const isNew = !h;
   h = h || { title: '', grades: [], level: '', done: false };
+  const se = subsEditor(h.subs, 'O que falta para conquistar ou registrar esta honor. Ex.: pedir o certificado.');
   openForm({
     title: isNew ? 'Nova honor' : 'Ficha da honor',
     fields: [
       { key: 'title', label: 'Título da honraria', value: h.title, limit: 100, ph: 'Ex.: Medalha de prata — OBMEP' },
       { key: 'grades', label: 'Anos', type: 'multi', value: h.grades, options: GRADES, hint: GRADE_HINT },
       { key: 'level', label: 'Nível de reconhecimento', type: 'radio', value: h.level, options: HONOR_LEVELS.map(t => ({ v: t, l: t })) },
+      se.field('Andamento (opcional)'),
     ],
-    onSubmit: v => { if (isNew) p.items.push(h = { id: uid(), ...v }); else Object.assign(h, v); h.done = sheetDone(p, h); },
+    onSubmit: v => { if (isNew) p.items.push(h = { id: uid(), ...v }); else Object.assign(h, v); h.subs = se.get(); h.done = sheetDone(p, h); },
     onDelete: isNew ? null : () => { p.items = p.items.filter(x => x.id !== h.id); },
+    onMount: se.mount,
     confirmText: 'Excluir esta honor?',
   });
 }
@@ -1065,6 +1099,79 @@ function vPillars() {
   </div>`;
 }
 
+/* Subtasks under a milestone or sheet: a bar with the share done, opening into a checklist */
+const CAP = { activities: 10, honors: 5 };
+function paceChip(it, frac) {
+  if (it.done || !it.date) return '';
+  const T = today(), left = diffDays(T, it.date);
+  if (it.start && T >= it.start && T <= it.date) {
+    const expected = diffDays(it.start, T) / Math.max(1, diffDays(it.start, it.date));
+    if (frac + .1 < expected) return `<span class="chip late">abaixo do ritmo · esperado ${Math.round(expected * 100)}%</span>`;
+  }
+  if (left >= 0 && left <= 7 && frac < 1) return `<span class="chip soon">falta ${Math.round((1 - frac) * 100)}% ${left === 0 ? 'para hoje' : left === 1 ? 'até amanhã' : `em ${left} dias`}</span>`;
+  return '';
+}
+function subsBlock(p, it) {
+  const subs = it.subs || [], open = ui.openSubs.has(it.id);
+  const dn = subs.filter(s => s.done).length, frac = subs.length ? dn / subs.length : 0;
+  const head = subs.length
+    ? `<button class="subs-toggle" data-a="subs-open" data-id="${it.id}" aria-expanded="${open}"><span class="mini-bar"><i style="width:${frac * 100}%"></i></span><b class="mono">${Math.round(frac * 100)}%</b><span>${dn}/${subs.length} subtarefas</span>${ic(open ? 'up' : 'down', 14)}</button>${paceChip(it, frac)}`
+    : it.done && !open ? '' : `<button class="subs-toggle add" data-a="subs-open" data-id="${it.id}" aria-expanded="${open}">${ic('plus', 13)}Subtarefas</button>`;
+  const list = open ? `<ul class="sub-list">${subs.map(s => `<li class="${s.done ? 'done' : ''}">
+      <button class="chk ${s.done ? 'on' : ''}" data-a="toggle-sub" data-p="${p.id}" data-i="${it.id}" data-s="${s.id}" aria-label="${s.done ? 'Reabrir' : 'Concluir'} subtarefa">${ic('check', 12)}</button>
+      <span>${esc(s.title)}</span>
+      <button class="icon-btn sm" data-a="del-sub" data-p="${p.id}" data-i="${it.id}" data-s="${s.id}" aria-label="Remover subtarefa">${ic('x', 13)}</button></li>`).join('')}</ul>
+    <input class="sub-in" data-enter="quick-sub" data-p="${p.id}" data-i="${it.id}" placeholder="Nova subtarefa e Enter">` : '';
+  return `<div class="subs-block">${head}${list}</div>`;
+}
+
+/* Optional score tracking (simulados, provas): records over time against a goal */
+function trackCard(p) {
+  const tr = p.track;
+  if (!tr) return '';
+  const num = v => v === '' || v == null || isNaN(+v) ? null : +v;
+  const sc = (p.scores || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+  const start = num(tr.start), goal = num(tr.goal);
+  const base = start ?? (sc[0] ? +sc[0].value : null);
+  const cur = sc.length ? +sc[sc.length - 1].value : null;
+  const pct = cur != null && base != null && goal != null && goal !== base ? Math.max(0, Math.min(1, (cur - base) / (goal - base))) : null;
+  const pts = [...(start != null ? [{ value: start, label: 'início' }] : []), ...sc.map(x => ({ value: +x.value, label: x.note || fmt(x.date) }))];
+  let chart = '';
+  if (pts.length) {
+    const W = 600, H = 150, L = 12, R = 12, Tp = 22, B = 14;
+    const ys = [...pts.map(x => x.value), ...(goal != null ? [goal] : [])];
+    let lo = Math.min(...ys), hi = Math.max(...ys);
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const padY = (hi - lo) * .12; lo -= padY; hi += padY;
+    const X = i => pts.length === 1 ? W / 2 : L + i * (W - L - R) / (pts.length - 1);
+    const Y = v => Tp + (hi - v) / (hi - lo) * (H - Tp - B);
+    // The SVG stretches to the card's width, so the dots are HTML on top and stay round
+    chart = `<div class="track-chart" role="img" aria-label="Evolução: ${pts.map(x => x.value).join(', ')}">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+        ${goal != null ? `<line x1="0" x2="${W}" y1="${Y(goal)}" y2="${Y(goal)}" class="goal-line"/>` : ''}
+        ${pts.length > 1 ? `<polyline points="${pts.map((x, i) => `${X(i)},${Y(x.value)}`).join(' ')}" class="line"/>` : ''}
+      </svg>
+      ${pts.map((x, i) => `<i class="${i === 0 && start != null ? 'pt start' : 'pt'}" style="left:${X(i) / W * 100}%;top:${Y(x.value) / H * 100}%" title="${esc(x.label)}: ${x.value}"></i>`).join('')}
+    </div>
+    <div class="track-axis">${pts.length > 1 ? `<span>${esc(pts[0].label)} · ${pts[0].value}</span>` : ''}<span class="sp"></span>${goal != null ? `<span class="goal">meta ${goal}</span>` : ''}</div>`;
+  }
+  return `<section class="card track">
+    <div class="sec-head"><h2 class="sec">${esc(tr.label || 'Nota')}</h2><span class="sp"></span><button class="link-btn" data-a="edit-pillar" data-id="${p.id}">${ic('edit', 14)}Valor inicial e meta</button></div>
+    <div class="track-top">
+      <div class="track-now"><div class="v">${cur ?? '—'}</div><div class="s">${cur == null ? 'nenhum resultado registrado' : `último · ${fmt(sc[sc.length - 1].date)}`}${cur != null && base != null && cur !== base ? ` · <b class="${(goal ?? Infinity) >= base === cur > base ? 'up' : 'down'}">${cur > base ? '+' : ''}${cur - base}</b> desde ${start != null ? 'o início' : 'o primeiro'}` : ''}</div></div>
+      ${pct != null ? `<div class="track-goal"><div class="bar"><i style="width:${pct * 100}%"></i></div><div class="s">${Math.round(pct * 100)}% do caminho até ${goal}${cur != null && goal != null ? ` · ${(goal > base ? cur >= goal : cur <= goal) ? 'meta alcançada' : `faltam ${Math.abs(goal - cur)}`}` : ''}</div></div>` : ''}
+    </div>
+    ${chart}
+    <div class="track-add">
+      <input type="date" id="sc-date" value="${today()}" aria-label="Data">
+      <input type="number" step="any" id="sc-val" data-enter="add-score" data-p="${p.id}" placeholder="Valor" aria-label="${esc(tr.label || 'Valor')}">
+      <input id="sc-note" data-enter="add-score" data-p="${p.id}" placeholder="Ex.: Simulado 2 (opcional)" aria-label="Descrição">
+      <button class="btn ghost sm" data-a="add-score" data-p="${p.id}">${ic('plus', 15)}Registrar</button>
+    </div>
+    ${sc.length ? `<ul class="rows track-list">${sc.slice().reverse().map(x => `<li class="row"><span class="chip date">${fmt(x.date)}</span><span class="row-main"><b class="mono">${esc(String(x.value))}</b>${x.note ? ` <span class="muted">· ${esc(x.note)}</span>` : ''}</span><button class="icon-btn sm" data-a="del-score" data-p="${p.id}" data-id="${x.id}" aria-label="Apagar registro">${ic('x', 14)}</button></li>`).join('')}</ul>` : ''}
+  </section>`;
+}
+
 function vPillar(id) {
   const p = pillar(id);
   if (!p) return `<div class="page"><div class="empty">Pilar não encontrado. <a href="#/pillars">Voltar</a></div></div>`;
@@ -1079,13 +1186,15 @@ function vPillar(id) {
     list = `<section class="card">
       <div class="sec-head"><h2 class="sec">Marcos</h2><span class="muted" style="font-size:12.5px">contam no progresso</span><span class="sp"></span><button class="link-btn" data-a="add-item" data-p="${p.id}">${ic('plus', 14)}Marco</button></div>
       ${p.items.length ? `<ul class="rows">${p.items.map((i, idx) => {
-        const sd = i.subs.filter(s => s.done).length;
         return `<li class="row ${i.done ? 'done' : ''}">
           <button class="chk ${i.done ? 'on' : ''}" data-a="toggle-item" data-p="${p.id}" data-id="${i.id}" aria-label="Concluir">${ic('check', 13)}</button>
-          <button class="row-main" data-a="edit-item" data-p="${p.id}" data-id="${i.id}">
-            <div class="row-title">${esc(i.title)}</div>
-            <div class="row-meta">${dateChip(i.date, i.done, i.start)}${i.done ? '' : prioChip(i.prio)}${i.subs.length ? `<span class="chip mono">${sd}/${i.subs.length} subtarefas</span>` : ''}${i.note ? `<span class="chip">${ic('note', 12)}nota</span>` : ''}</div>
-          </button>
+          <div class="row-body">
+            <button class="row-main" data-a="edit-item" data-p="${p.id}" data-id="${i.id}">
+              <div class="row-title">${esc(i.title)}</div>
+              <div class="row-meta">${dateChip(i.date, i.done, i.start)}${i.done ? '' : prioChip(i.prio)}${i.note ? `<span class="chip">${ic('note', 12)}nota</span>` : ''}</div>
+            </button>
+            ${subsBlock(p, i)}
+          </div>
           <div class="row-tools">
             <button class="icon-btn sm" data-a="move-item" data-p="${p.id}" data-id="${i.id}" data-d="-1" aria-label="Subir" ${idx === 0 ? 'disabled' : ''}>${ic('up', 15)}</button>
             <button class="icon-btn sm" data-a="move-item" data-p="${p.id}" data-id="${i.id}" data-d="1" aria-label="Descer" ${idx === p.items.length - 1 ? 'disabled' : ''}>${ic('down', 15)}</button>
@@ -1095,15 +1204,16 @@ function vPillar(id) {
     </section>`;
   } else {
     const isAct = p.type === 'activities';
-    const slots = Math.max(0, (p.target || 0) - p.items.length);
+    // Show every Common App slot; the goal can be smaller and is marked in the list
+    const slots = Math.max(CAP[p.type], p.target || 0, p.items.length) - p.items.length;
     list = `<section>
       <div class="sec-head"><h2 class="sec">${isAct ? 'Atividades' : 'Honors'}</h2><span class="muted" style="font-size:12.5px">na ordem em que vão para a Common App · a ficha fica pronta quando todos os campos estão preenchidos</span><span class="sp"></span><button class="btn ghost sm" data-a="add-item" data-p="${p.id}">${ic('plus', 15)}${isAct ? 'Atividade' : 'Honor'}</button></div>
       <div class="sheets">
-        ${p.items.map((a, idx) => {
+        ${[...p.items.map((a, idx) => {
           const missing = sheetMissing(p, a);
           return `<article class="sheet ${a.done ? 'done' : ''}">
             <div class="sheet-n">${pad(idx + 1)}</div>
-            <button class="row-main" data-a="edit-item" data-p="${p.id}" data-id="${a.id}">
+            <div class="row-body"><button class="row-main" data-a="edit-item" data-p="${p.id}" data-id="${a.id}">
               ${isAct ? `<div class="sheet-type">${esc(a.atype || 'Tipo não definido')}</div>` : `<div class="sheet-type">${esc(a.level || 'Nível não definido')}</div>`}
               <div class="sheet-title">${isAct ? `${esc(a.org || a.title || 'Sem nome')}${a.org && a.title ? `<span class="org"> · ${esc(a.title)}</span>` : ''}` : esc(a.title || 'Sem título')}</div>
               ${isAct ? `<div class="sheet-desc ${a.note ? '' : 'missing'}">${a.note ? esc(a.note) : 'Descrição ainda não escrita'}</div>` : ''}
@@ -1115,14 +1225,15 @@ function vPillar(id) {
                 ${missing ? `<span class="chip soon">${plural(missing, 'campo vazio', 'campos vazios')}</span>` : ''}
               </div>
             </button>
+            ${subsBlock(p, a)}</div>
             <div class="sheet-side">
               <span class="chk ${a.done ? 'on' : ''}" role="img" aria-label="${a.done ? 'Ficha pronta' : 'Ficha incompleta'}" title="${a.done ? 'Ficha pronta' : 'Fica pronta quando todos os campos estiverem preenchidos'}">${ic('check', 13)}</span>
               <button class="icon-btn sm" data-a="move-item" data-p="${p.id}" data-id="${a.id}" data-d="-1" aria-label="Subir" ${idx === 0 ? 'disabled' : ''}>${ic('up', 15)}</button>
               <button class="icon-btn sm" data-a="move-item" data-p="${p.id}" data-id="${a.id}" data-d="1" aria-label="Descer" ${idx === p.items.length - 1 ? 'disabled' : ''}>${ic('down', 15)}</button>
             </div>
           </article>`;
-        }).join('')}
-        ${Array.from({ length: slots }, (_, i) => `<button class="sheet-slot" data-a="add-item" data-p="${p.id}"><span class="sheet-n">${pad(p.items.length + i + 1)}</span><span style="display:flex;align-items:center;gap:8px">${ic('plus', 15)}${isAct ? 'Vaga para atividade' : 'Vaga para honor'}</span></button>`).join('')}
+        }), ...Array.from({ length: slots }, (_, i) => `<button class="sheet-slot" data-a="add-item" data-p="${p.id}"><span class="sheet-n">${pad(p.items.length + i + 1)}</span><span style="display:flex;align-items:center;gap:8px">${ic('plus', 15)}${isAct ? 'Vaga para atividade' : 'Vaga para honor'}</span></button>`)]
+          .map((h, i, all) => p.target && i === p.target - 1 && i < all.length - 1 ? h + `<div class="sheet-goal"><span>Meta: ${p.target} ${nounFor(p)[p.target === 1 ? 0 : 1]}</span></div>` : h).join('')}
       </div>
     </section>`;
   }
@@ -1141,6 +1252,7 @@ function vPillar(id) {
     ${segs(p, 'lg')}
     <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:13px;color:var(--ink-2)"><span>${pr.done} de ${pr.total} ${pr.total === 1 ? one : many} ${p.type === 'checklist' ? 'concluídos' : 'prontas'}</span><span class="muted">Meta: ${p.target ? `${p.target} ${nounFor(p)[p.target === 1 ? 0 : 1]}` : 'todos os itens da lista'} · <button class="link-btn" data-a="edit-pillar" data-id="${p.id}">mudar</button></span></div>
 
+    ${trackCard(p)}
     <div class="grid pd-cols">
       ${list}
       <div class="grid">
@@ -1623,6 +1735,11 @@ const A = {
   'edit-pillar': d => pillarForm(pillar(d.id)),
   'add-item': d => itemForm(pillar(d.p)),
   'edit-item': d => { const p = pillar(d.p); itemForm(p, p.items.find(i => i.id === d.id)); },
+  'subs-open': d => { ui.openSubs.has(d.id) ? ui.openSubs.delete(d.id) : ui.openSubs.add(d.id); render(); if (ui.openSubs.has(d.id)) $(`[data-enter="quick-sub"][data-i="${d.id}"]`)?.focus(); },
+  'toggle-sub': d => { const it = pillar(d.p).items.find(i => i.id === d.i), x = it.subs.find(s => s.id === d.s); x.done = !x.done; save(); render(); },
+  'del-sub': d => { const it = pillar(d.p).items.find(i => i.id === d.i); it.subs = it.subs.filter(s => s.id !== d.s); save(); render(); },
+  'add-score': d => { if (addScore(d.p)) { save(); render(); $('#sc-val')?.focus(); } },
+  'del-score': d => { const p = pillar(d.p); if (!confirm('Apagar este registro?')) return; p.scores = p.scores.filter(x => x.id !== d.id); save(); render(); },
   'toggle-item': d => {
     const p = pillar(d.p), i = p.items.find(i => i.id === d.id);
     i.done = !i.done; save(); render();
@@ -1791,7 +1908,17 @@ const A = {
   },
 };
 
+function addScore(pid) {
+  const p = pillar(pid), v = $('#sc-val').value.trim(), date = $('#sc-date').value || today();
+  if (v === '' || isNaN(+v)) { toast('Coloque o valor'); $('#sc-val').focus(); return false; }
+  (p.scores = p.scores || []).push({ id: uid(), date, value: +v, note: $('#sc-note').value.trim() });
+  toast('Resultado registrado');
+  return true;
+}
+
 const ENTER = {
+  'quick-sub': (d, el) => { const it = pillar(d.p).items.find(i => i.id === d.i); (it.subs = it.subs || []).push({ id: uid(), title: el.value.trim(), done: false }); },
+  'add-score': d => { addScore(d.p); },
   'quick-item': (d, el) => { const p = pillar(d.p); p.items.push({ id: uid(), title: el.value.trim(), done: false, date: '', note: '', subs: [] }); },
   'quick-task': (d, el) => { S.tasks.push({ id: uid(), title: el.value.trim(), due: '', done: false, goalId: '', pillarId: '', meetId: '', note: '' }); },
   'quick-question': (d, el) => {
@@ -1881,7 +2008,7 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     ENTER[el.dataset.enter](el.dataset, el);
     save(); render();
-    $(`[data-enter="${el.dataset.enter}"]`)?.focus();
+    $(`[data-enter="${el.dataset.enter}"]${el.dataset.i ? `[data-i="${el.dataset.i}"]` : ''}`)?.focus();
   }
 });
 $('#import-file').addEventListener('change', async e => {

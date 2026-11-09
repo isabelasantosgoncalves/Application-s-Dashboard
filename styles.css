@@ -655,6 +655,62 @@ span.chk.on, span.chk.on:hover { border-color: var(--accent); }
 .subs-add { display: flex; gap: 8px; }
 .subs-add input { flex: 1; }
 
+/* Subtasks on milestones and sheets */
+.row-body { flex: 1; min-width: 0; }
+.subs-block { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; }
+.subs-toggle {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--ink-2); padding: 3px 8px 3px 0; border-radius: 8px;
+}
+.subs-toggle:hover { color: var(--ink); }
+.subs-toggle b { font-weight: 600; color: var(--ink); font-size: 12px; }
+.subs-toggle.add { color: var(--ink-3); gap: 5px; padding-left: 0; }
+.mini-bar { width: 72px; height: 6px; border-radius: 3px; background: var(--sunk); overflow: hidden; }
+.mini-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.sub-list { list-style: none; margin: 2px 0 0; padding: 0; width: 100%; }
+.sub-list li { display: flex; align-items: center; gap: 9px; padding: 4px 0; font-size: 13.5px; }
+.sub-list li > span { flex: 1; min-width: 0; }
+.sub-list li.done > span { color: var(--ink-3); text-decoration: line-through; }
+.sub-list .chk { width: 17px; height: 17px; border-radius: 5px; }
+.sub-list .icon-btn { opacity: 0; }
+.sub-list li:hover .icon-btn, .sub-list .icon-btn:focus-visible { opacity: 1; }
+@media (hover: hover) {
+  .row .subs-toggle.add, .sheet .subs-toggle.add { opacity: 0; transition: opacity .15s; }
+  .row:hover .subs-toggle.add, .sheet:hover .subs-toggle.add, .subs-toggle.add:focus-visible { opacity: 1; }
+}
+.sub-in { width: 100%; border: 1px dashed var(--line-2); border-radius: 9px; padding: 7px 10px; background: transparent; font-size: 13px; }
+.sheet-goal { display: flex; align-items: center; gap: 10px; font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+.sheet-goal::before, .sheet-goal::after { content: ""; flex: 1; height: 1px; background: var(--accent); opacity: .5; }
+.check-line { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; cursor: pointer; }
+.check-line input { margin-top: 3px; accent-color: var(--accent); }
+.check-line b { display: block; font-weight: 600; }
+.check-line small { color: var(--ink-3); font-size: 12.5px; }
+#track-box { display: grid; gap: 14px; }
+#track-box[hidden] { display: none; }
+
+/* Score tracking */
+.track { margin-top: 22px; }
+.track-top { display: flex; flex-wrap: wrap; gap: 14px 32px; align-items: flex-end; }
+.track-now .v { font-size: 44px; font-weight: 600; letter-spacing: -.04em; line-height: 1; font-variant-numeric: tabular-nums; }
+.track-now .s, .track-goal .s { font-size: 12.5px; color: var(--ink-3); margin-top: 6px; }
+.track-now b.up { color: var(--accent); }
+.track-now b.down { color: var(--red); }
+.track-goal { flex: 1; min-width: 200px; max-width: 420px; }
+.track-chart { position: relative; height: 150px; margin-top: 16px; }
+.track-chart svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.track-chart .line { fill: none; stroke: var(--accent); stroke-width: 2.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.track-chart .goal-line { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 5 5; vector-effect: non-scaling-stroke; }
+.track-chart .pt { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--surface); border: 2.5px solid var(--accent); }
+.track-chart .pt.start { border-color: var(--ink-3); }
+.track-axis { display: flex; font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-top: 4px; }
+.track-axis .goal { color: var(--ink-2); }
+.track-add { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.track-add input { border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px; background: #fff; font-size: 13.5px; }
+.track-add #sc-val { width: 150px; }
+.track-add #sc-note { flex: 1; min-width: 160px; }
+.track-list { margin-top: 10px; }
+.track-list .row { align-items: center; gap: 10px; padding: 7px 0; }
+
 /* Welcome */
 .welcome { width: min(620px, 100%); }
 .welcome .intro { padding: 30px 28px 8px; }
