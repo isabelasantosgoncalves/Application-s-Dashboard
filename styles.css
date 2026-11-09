@@ -701,7 +701,6 @@ span.chk.on, span.chk.on:hover { border-color: var(--accent); }
 .track-chart .line { fill: none; stroke: var(--accent); stroke-width: 2.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .track-chart .goal-line { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 5 5; vector-effect: non-scaling-stroke; }
 .track-chart .pt { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--surface); border: 2.5px solid var(--accent); }
-.track-chart .pt.start { border-color: var(--ink-3); }
 .track-axis { display: flex; font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-top: 4px; }
 .track-axis .goal { color: var(--ink-2); }
 .track-add { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }

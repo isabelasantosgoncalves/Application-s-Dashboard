@@ -306,6 +306,15 @@ function migrate(s) {
   if (s.profile.mentoria === undefined) s.profile.mentoria = true;
   s.pillars.forEach(p => { const k = OLD_DESC[p.desc]; if (k) p.desc = PILLAR_DESC[k]; });
   s.pillars.forEach(p => { if (p.type !== 'checklist') p.items.forEach(a => { a.done = sheetDone(p, a); }); });
+  s.pillars.forEach(p => {
+    if (!p.track || !('start' in p.track)) return;
+    const v = p.track.start;
+    if (v !== '' && v != null && !isNaN(+v)) {
+      const first = (p.scores = p.scores || []).map(x => x.date).sort()[0];
+      p.scores.push({ id: uid(), date: first ? addDays(first, -1) : today(), value: +v, note: 'Inicial' });
+    }
+    delete p.track.start;
+  });
   s.meetings.forEach(m => {
     if (m.agenda || m.notes || m.next) {
       const body = [m.agenda && `Pauta\n${m.agenda}`, m.notes && `Anotações\n${m.notes}`, m.next && `Próximos passos\n${m.next}`].filter(Boolean).join('\n\n');
@@ -336,7 +345,7 @@ function seed({ name, cycle, test, mode, mentor = true }) {
 
   const sat = P({
     name: 'SAT', desc: PILLAR_DESC.sat,
-    track: ex ? { label: 'Nota do simulado', start: '', goal: '1450' } : null,
+    track: ex ? { label: 'Nota do simulado', goal: '1450' } : null,
     scores: ex ? [{ id: uid(), date: d(-18), value: 1180, note: 'Diagnóstico' }] : [],
     items: [
       it('Diagnóstico inicial', ex ? { done: true, date: d(-18), note: 'Simulado oficial do Bluebook para medir o ponto de partida.' } : {}),
@@ -592,15 +601,14 @@ function pillarForm(p = null) {
       },
       { key: 'target', label: 'Meta: quantos itens fecham o pilar', type: 'number', value: p.target ?? '', hint: 'Ex.: 8 extracurriculares. Em branco, o pilar fecha quando todos os itens da lista estiverem concluídos. Nas fichas, as vagas da Common App (10 atividades, 5 honors) continuam à vista.' },
       { type: 'html', html: `<label class="check-line"><input type="checkbox" name="track" ${p.track ? 'checked' : ''}><span><b>Acompanhar uma nota ou número</b><small>Para registrar cada resultado, como as notas dos simulados, e ver a evolução até a meta.</small></span></label><div id="track-box" ${p.track ? '' : 'hidden'}>` },
-      { key: 'trackLabel', label: 'O que você vai acompanhar', value: p.track?.label || '', ph: 'Ex.: Nota do simulado' },
-      [{ key: 'trackStart', label: 'Valor inicial (opcional)', type: 'number', value: p.track?.start ?? '', ph: 'Ex.: 820' }, { key: 'trackGoal', label: 'Meta (opcional)', type: 'number', value: p.track?.goal ?? '', ph: 'Ex.: 1450' }],
+      [{ key: 'trackLabel', label: 'O que você vai acompanhar', value: p.track?.label || '', ph: 'Ex.: Nota do simulado' }, { key: 'trackGoal', label: 'Meta (opcional)', type: 'number', value: p.track?.goal ?? '', ph: 'Ex.: 1450' }],
       { type: 'html', html: '</div>' },
     ],
     submit: isNew ? 'Criar pilar' : 'Salvar',
     onSubmit: (v, form) => {
       const target = v.target ? Math.max(1, Math.round(+v.target)) : null;
       // Turning tracking off keeps the recorded scores, in case it is turned back on
-      const track = form.querySelector('[name=track]').checked ? { label: v.trackLabel || 'Nota', start: v.trackStart, goal: v.trackGoal } : null;
+      const track = form.querySelector('[name=track]').checked ? { label: v.trackLabel || 'Nota', goal: v.trackGoal } : null;
       if (isNew) { const np = { id: uid(), type: v.type || 'checklist', name: v.name, desc: v.desc, target, track, scores: [], items: [] }; S.pillars.push(np); setTimeout(() => go(`pillar/${np.id}`)); }
       else { Object.assign(p, { name: v.name, desc: v.desc, target, track }); p.scores = p.scores || []; if (!locked && v.type) p.type = v.type; }
     },
@@ -1131,11 +1139,12 @@ function trackCard(p) {
   if (!tr) return '';
   const num = v => v === '' || v == null || isNaN(+v) ? null : +v;
   const sc = (p.scores || []).slice().sort((a, b) => a.date.localeCompare(b.date));
-  const start = num(tr.start), goal = num(tr.goal);
-  const base = start ?? (sc[0] ? +sc[0].value : null);
+  const goal = num(tr.goal);
+  // The first result recorded is the starting point
+  const base = sc[0] ? +sc[0].value : null;
   const cur = sc.length ? +sc[sc.length - 1].value : null;
   const pct = cur != null && base != null && goal != null && goal !== base ? Math.max(0, Math.min(1, (cur - base) / (goal - base))) : null;
-  const pts = [...(start != null ? [{ value: start, label: 'início' }] : []), ...sc.map(x => ({ value: +x.value, label: x.note || fmt(x.date) }))];
+  const pts = sc.map(x => ({ value: +x.value, label: x.note || fmt(x.date) }));
   let chart = '';
   if (pts.length) {
     const W = 600, H = 150, L = 12, R = 12, Tp = 22, B = 14;
@@ -1151,14 +1160,14 @@ function trackCard(p) {
         ${goal != null ? `<line x1="0" x2="${W}" y1="${Y(goal)}" y2="${Y(goal)}" class="goal-line"/>` : ''}
         ${pts.length > 1 ? `<polyline points="${pts.map((x, i) => `${X(i)},${Y(x.value)}`).join(' ')}" class="line"/>` : ''}
       </svg>
-      ${pts.map((x, i) => `<i class="${i === 0 && start != null ? 'pt start' : 'pt'}" style="left:${X(i) / W * 100}%;top:${Y(x.value) / H * 100}%" title="${esc(x.label)}: ${x.value}"></i>`).join('')}
+      ${pts.map((x, i) => `<i class="pt" style="left:${X(i) / W * 100}%;top:${Y(x.value) / H * 100}%" title="${esc(x.label)}: ${x.value}"></i>`).join('')}
     </div>
     <div class="track-axis">${pts.length > 1 ? `<span>${esc(pts[0].label)} · ${pts[0].value}</span>` : ''}<span class="sp"></span>${goal != null ? `<span class="goal">meta ${goal}</span>` : ''}</div>`;
   }
   return `<section class="card track">
-    <div class="sec-head"><h2 class="sec">${esc(tr.label || 'Nota')}</h2><span class="sp"></span><button class="link-btn" data-a="edit-pillar" data-id="${p.id}">${ic('edit', 14)}Valor inicial e meta</button></div>
+    <div class="sec-head"><h2 class="sec">${esc(tr.label || 'Nota')}</h2><span class="sp"></span><button class="link-btn" data-a="edit-pillar" data-id="${p.id}">${ic('edit', 14)}Meta</button></div>
     <div class="track-top">
-      <div class="track-now"><div class="v">${cur ?? '—'}</div><div class="s">${cur == null ? 'nenhum resultado registrado' : `último · ${fmt(sc[sc.length - 1].date)}`}${cur != null && base != null && cur !== base ? ` · <b class="${(goal ?? Infinity) >= base === cur > base ? 'up' : 'down'}">${cur > base ? '+' : ''}${cur - base}</b> desde ${start != null ? 'o início' : 'o primeiro'}` : ''}</div></div>
+      <div class="track-now"><div class="v">${cur ?? '—'}</div><div class="s">${cur == null ? 'nenhum resultado registrado' : `último · ${fmt(sc[sc.length - 1].date)}`}${cur != null && base != null && cur !== base ? ` · <b class="${(goal ?? Infinity) >= base === cur > base ? 'up' : 'down'}">${cur > base ? '+' : ''}${cur - base}</b> desde o primeiro` : ''}</div></div>
       ${pct != null ? `<div class="track-goal"><div class="bar"><i style="width:${pct * 100}%"></i></div><div class="s">${Math.round(pct * 100)}% do caminho até ${goal}${cur != null && goal != null ? ` · ${(goal > base ? cur >= goal : cur <= goal) ? 'meta alcançada' : `faltam ${Math.abs(goal - cur)}`}` : ''}</div></div>` : ''}
     </div>
     ${chart}
