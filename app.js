@@ -92,6 +92,7 @@ let S = null;
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); }
   catch { toast('Não foi possível salvar neste navegador'); }
+  queueBackup();
 }
 const ui = {
   calMonth: today().slice(0, 7), selDay: today(), openSubs: new Set(),
@@ -257,6 +258,16 @@ function textToHTML(text) {
   return out + (list ? '</ul>' : '');
 }
 const noteHTML = n => n.html ?? textToHTML(n.body);
+/* Optional counter in the note footer: words or characters (spaces included, as the
+   Common App counts), with an optional limit such as 650 words for the essay */
+function noteCount(n) {
+  if (!n.count) return '';
+  const t = n.body || '';
+  const v = n.count === 'words' ? (t.match(/\S+/g) || []).length : t.replace(/\n/g, '').length;
+  const lim = +n.countLimit || 0;
+  const unit = n.count === 'words' ? ['palavra', 'palavras'] : ['caractere', 'caracteres'];
+  return `<span class="${lim && v > lim ? 'over' : ''}">${lim ? `${v} / ${lim} ${unit[1]}` : plural(v, ...unit)}${lim && v > lim ? ` · ${v - lim} acima do limite` : ''}</span>`;
+}
 // Plain text from the editor's HTML, one line per block (innerText loses them while hidden)
 function noteText(html) {
   const t = document.createElement('template');
@@ -886,6 +897,7 @@ function renderSide() {
       ${S.profile.name ? `<div class="brand-sub">de ${esc(S.profile.name)}</div>` : ''}
     </div>
     ${NAV.map(([lab, items]) => `<div class="nav-label">${lab}</div><nav class="nav">${items.map(([k, l, i]) => `<a href="#/${k}" class="${r === k ? 'on' : ''}" ${r === k ? 'aria-current="page"' : ''}>${ic(i)}${l}${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}</a>`).join('')}</nav>`).join('')}
+    ${backup.state === 'paused' ? `<button class="side-backup" data-a="backup-resume">${ic('refresh', 15)}<span>Backup pausado<small>Clique para continuar salvando</small></span></button>` : ''}
     ${nd ? `<a class="side-card" href="#/calendar" data-a="goto-day" data-date="${nd.date}">
       <div class="eyebrow">Prazo principal</div>
       <div class="big">${diffDays(today(), nd.date)}<small>${diffDays(today(), nd.date) === 1 ? 'dia' : 'dias'}</small></div>
@@ -1664,6 +1676,12 @@ function vNotes() {
           <button type="button" data-fmt="removeFormat" title="Limpar formatação" aria-label="Limpar formatação"><span class="tx">T<sub>x</sub></span></button>
         </div>
         <div class="note-ed" contenteditable="true" data-i="note-body" data-ph="Escreva aqui…" role="textbox" aria-multiline="true" aria-label="Texto da nota">${cleanHTML(noteHTML(n))}</div>
+        <div class="note-foot">
+          <select data-c="note-count" class="inline-select" aria-label="Contagem">${[['', 'Sem contagem'], ['words', 'Contar palavras'], ['chars', 'Contar caracteres']].map(([v, l]) => `<option value="${v}" ${(n.count || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+          ${n.count ? `<label class="note-limit">limite <input type="number" min="1" data-c="note-limit" value="${esc(n.countLimit || '')}" placeholder="—" aria-label="Limite"></label>` : ''}
+          <span class="sp"></span>
+          <span class="note-count" aria-live="polite">${noteCount(n)}</span>
+        </div>
       </section>` : '<section class="card note-editor" style="min-height:0"><div class="empty">Crie uma nota para começar.</div></section>'}
     </div>
   </div>`;
@@ -1680,8 +1698,17 @@ function vSettings() {
         <button class="btn ghost sm" data-a="edit-profile">${ic('edit', 15)}Editar perfil</button>
       </section>
       <section class="card">
-        <h2 class="sec">Backup</h2>
-        <p>Seus dados ficam só neste navegador (${(used / 1024).toFixed(1)} KB). Exporte um arquivo de vez em quando ou para levar para outro aparelho.</p>
+        <h2 class="sec">Backup automático</h2>
+        ${backup.state === 'unsupported' ? '<p>Este navegador não deixa o app salvar num arquivo sozinho. No Chrome ou no Edge do computador, esta opção funciona. Enquanto isso, use Exportar de vez em quando.</p>'
+          : backup.state === 'off' ? `<p>Escolha um arquivo no seu computador e o app guarda uma cópia de tudo nele a cada mudança. Se a pasta estiver no Google Drive ou no OneDrive, a cópia vai também para a nuvem.</p>
+        <button class="btn primary sm" data-a="backup-pick">${ic('dl', 15)}Ligar backup automático</button>`
+          : `<p><span class="chip ${backup.state === 'on' ? 'ok' : 'soon'}">${backup.state === 'on' ? 'Ligado' : 'Pausado'}</span> <b>${esc(backup.handle.name)}</b> · <span class="backup-last">${backupWhen()}</span></p>
+        ${backup.state === 'paused' ? '<p class="muted" style="font-size:13px">O navegador pede para confirmar o acesso ao arquivo depois de reiniciar.</p>' : ''}
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${backup.state === 'paused' ? `<button class="btn primary sm" data-a="backup-resume">Continuar salvando</button>` : `<button class="btn ghost sm" data-a="backup-now">${ic('refresh', 15)}Salvar agora</button>`}<button class="btn ghost sm" data-a="backup-pick">Trocar arquivo</button><button class="btn ghost sm" data-a="backup-off">Desligar</button></div>`}
+      </section>
+      <section class="card">
+        <h2 class="sec">Exportar e importar</h2>
+        <p>Seus dados ficam neste navegador (${(used / 1024).toFixed(1)} KB). Exporte uma cópia para guardar ou levar para outro aparelho, e importe para restaurar.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" data-a="export">${ic('dl', 15)}Exportar</button><button class="btn ghost sm" data-a="import">${ic('ul', 15)}Importar</button></div>
       </section>
       <section class="card">
@@ -1692,6 +1719,39 @@ function vSettings() {
     </div>
   </div>`;
 }
+
+/* ================= Automatic backup to a file =================
+   The student picks a file once (ideally in a folder synced to Google Drive or
+   OneDrive); every change is written there a moment later. The file handle lives
+   in IndexedDB; after the browser restarts it may need one click to allow again. */
+const backup = { state: 'off', handle: null, last: null };
+async function initBackup() {
+  navigator.storage?.persist?.().catch(() => {});
+  if (!('showSaveFilePicker' in window)) { backup.state = 'unsupported'; return; }
+  try {
+    const h = await idb.get('backupFile');
+    if (!h) return;
+    backup.handle = h;
+    backup.last = await idb.get('backupLast');
+    backup.state = await h.queryPermission({ mode: 'readwrite' }) === 'granted' ? 'on' : 'paused';
+  } catch { backup.state = 'off'; }
+}
+let backupT;
+function queueBackup() {
+  if (backup.state !== 'on' || !S) return;
+  clearTimeout(backupT);
+  backupT = setTimeout(writeBackup, 1500);
+}
+async function writeBackup() {
+  try {
+    const w = await backup.handle.createWritable();
+    await w.write(JSON.stringify(S, null, 2));
+    await w.close();
+    backup.last = Date.now(); idb.set('backupLast', backup.last);
+    const el = $('.backup-last'); if (el) el.textContent = backupWhen();
+  } catch { backup.state = 'paused'; renderSide(); }
+}
+const backupWhen = () => backup.last ? `salvo ${new Date(backup.last).toDateString() === new Date().toDateString() ? 'hoje' : fmt(iso(new Date(backup.last)))} às ${new Date(backup.last).toTimeString().slice(0, 5)}` : 'ainda não salvo';
 
 /* ================= Folder access (File System Access API) ================= */
 const idb = {
@@ -1901,6 +1961,31 @@ const A = {
     S.notes = S.notes.filter(n => n.id !== d.id); ui.noteId = null; ui.noteOpen = false; save(); render();
   },
 
+  'backup-pick': async () => {
+    try {
+      const h = await window.showSaveFilePicker({ id: 'dossie-backup', suggestedName: 'dossie-backup.json', types: [{ description: 'Backup do Dossiê', accept: { 'application/json': ['.json'] } }] });
+      await idb.set('backupFile', h);
+      Object.assign(backup, { handle: h, state: 'on' });
+      await writeBackup(); render(); toast('Backup automático ligado');
+    } catch (e) { if (e.name !== 'AbortError') toast('Não foi possível usar esse arquivo'); }
+  },
+  'backup-resume': async () => {
+    try { if (await backup.handle.requestPermission({ mode: 'readwrite' }) === 'granted') { backup.state = 'on'; await writeBackup(); renderSide(); render(); toast('Backup retomado'); } }
+    catch { toast('Acesso negado'); }
+  },
+  'backup-now': async () => { await writeBackup(); toast(backup.state === 'on' ? 'Backup salvo' : 'Não foi possível salvar'); },
+  'backup-off': async () => {
+    if (!confirm('Desligar o backup automático? O arquivo continua no computador, só deixa de ser atualizado.')) return;
+    await idb.set('backupFile', null); Object.assign(backup, { handle: null, state: 'off' }); renderSide(); render();
+  },
+  'backup-restore': async () => {
+    try {
+      if (await backup.handle.requestPermission({ mode: 'readwrite' }) !== 'granted') return;
+      const data = JSON.parse(await (await backup.handle.getFile()).text());
+      if (!data || !Array.isArray(data.pillars) || !data.colleges) throw new Error();
+      S = migrate(data); backup.state = 'on'; modalLocked = false; closeModal(); save(); render(); toast('Dados restaurados do backup');
+    } catch { toast('Não foi possível ler o backup'); }
+  },
   'edit-profile': () => profileForm(),
   export: () => {
     const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
@@ -1948,6 +2033,8 @@ const CHANGE = {
   },
   'col-sort': el => { if (!el.value) ui.sort = null; else { const [col, dir] = el.value.split(':'); ui.sort = { col, dir: +dir }; } render(); },
   'task-view': el => { ui.taskView = el.value; render(); },
+  'note-count': el => { const n = S.notes.find(n => n.id === ui.noteId); n.count = el.value; n.countLimit = ''; save(); render(); },
+  'note-limit': el => { const n = S.notes.find(n => n.id === ui.noteId); n.countLimit = el.value ? Math.max(1, Math.round(+el.value)) : ''; save(); $('.note-count').innerHTML = noteCount(n); },
   'note-pillar': el => { const n = S.notes.find(n => n.id === ui.noteId); n.pillarId = el.value; n.updated = Date.now(); save(); render(); },
 };
 
@@ -1962,6 +2049,7 @@ const INPUT = {
     const n = S.notes.find(n => n.id === ui.noteId);
     n.body = noteText(el.innerHTML); n.html = n.body ? el.innerHTML : ''; n.updated = Date.now();
     fmtState();
+    const c = $('.note-count'); if (c) c.innerHTML = noteCount(n);
     clearTimeout(noteSaveT); noteSaveT = setTimeout(save, 300);
   },
 };
@@ -2055,7 +2143,12 @@ function render() {
 window.addEventListener('hashchange', () => { document.body.classList.remove('side-open'); closeModal(false); render(); });
 
 async function boot() {
-  if (!S) { $('#side').innerHTML = ''; $('#main').innerHTML = ''; $('#tabbar').innerHTML = ''; profileForm(true); return; }
+  await initBackup();
+  if (!S) {
+    $('#side').innerHTML = ''; $('#main').innerHTML = ''; $('#tabbar').innerHTML = ''; profileForm(true);
+    if (backup.handle) $('#wform .body')?.insertAdjacentHTML('afterbegin', `<div class="restore-box"><b>Encontramos um backup automático</b><span>${esc(backup.handle.name)} · ${backupWhen()}</span><button type="button" class="btn primary sm" data-a="backup-restore">Restaurar meus dados</button></div>`);
+    return;
+  }
   render();
   await initFolder();
   if (routeName() === 'docs') render();
